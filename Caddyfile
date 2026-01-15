@@ -1,0 +1,17 @@
+{
+	local_certs
+	skip_install_trust
+
+	on_demand_tls {
+		ask http://localhost:{$RESOLVER_PORT:3000}/_caddy/check
+	}
+}
+
+# Catch-all for any hostname ending in .localhost
+:443 {
+	tls {
+		on_demand
+	}
+
+	reverse_proxy localhost:{$RESOLVER_PORT:3000}
+}

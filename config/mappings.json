@@ -1,0 +1,37 @@
+{
+  "adminer.mapeditor.localhost": {
+    "type": "docker",
+    "target": "mapeditor-adminer-1",
+    "port": 8080,
+    "createdAt": "2026-01-15T13:38:04.102Z",
+    "llmReason": "Hostname 'adminer.mapeditor.localhost' matches the pattern where 'mapeditor' is the project name and 'adminer' is the service name. The Docker container 'mapeditor-adminer-1' is the Adminer service for the mapeditor project, running on port 8080."
+  },
+  "admin.mapeditor.localhost": {
+    "type": "process",
+    "target": "localhost",
+    "port": 1990,
+    "createdAt": "2026-01-15T13:38:19.345Z",
+    "llmReason": "Hostname 'admin.mapeditor.localhost' matches the mapeditor project with 'admin' as the service identifier. The local process at port 1990 is a Vite dev server running in '/home/matej21/projects/external/mapeditor/admin' directory, which is the admin application for the mapeditor project. This is the correct match for the admin subdomain."
+  },
+  "engine.mapeditor.localhost": {
+    "type": "docker",
+    "target": "mapeditor-contember-engine-1",
+    "port": 4000,
+    "createdAt": "2026-01-15T13:39:49.555Z",
+    "llmReason": "Hostname 'engine.mapeditor.localhost' matches the pattern where 'mapeditor' is the project name and 'engine' is the service identifier. The Docker container 'mapeditor-contember-engine-1' is the Contember Engine service for the mapeditor project, running on port 4000. This follows the same naming convention as the existing 'adminer.mapeditor.localhost' and 'admin.mapeditor.localhost' mappings."
+  },
+  "nejlepsi.aplikace.localhost": {
+    "type": "process",
+    "target": "localhost",
+    "port": 1990,
+    "createdAt": "2026-01-15T13:40:53.633Z",
+    "llmReason": "The hostname 'nejlepsi.aplikace.localhost' appears to be a Czech phrase ('best application'). While it doesn't match any existing project name patterns directly, the only available local processes are Vite dev servers in the mapeditor project. Given the lack of a clear project identifier match and the presence of active Vite development servers, port 1990 (mapeditor admin Vite server) is the most reasonable default target for a development environment. This is a best-guess routing as the hostname doesn't match any known project structure."
+  },
+  "adminer.clientcare.localhost": {
+    "type": "docker",
+    "target": "clientcare-adminer-1",
+    "port": 8080,
+    "createdAt": "2026-01-15T13:51:48.487Z",
+    "llmReason": "Hostname 'adminer.clientcare.localhost' matches the pattern where 'clientcare' is the project name and 'adminer' is the service name. The Docker container 'clientcare-adminer-1' is the Adminer service for the clientcare project, running on port 8080. This follows the same naming convention as the existing 'adminer.mapeditor.localhost' mapping."
+  }
+}

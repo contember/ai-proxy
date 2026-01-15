@@ -1,0 +1,40 @@
+services:
+  resolver:
+    image: oven/bun:1
+    working_dir: /app
+    command: bun run src/index.ts
+    user: root
+    privileged: true
+    environment:
+      - PORT=3000
+      - MODEL=${MODEL:-anthropic/claude-haiku-4.5}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - COMPOSE_PROJECT=proxy
+    volumes:
+      # Mount source code
+      - .:/app
+      # Docker CLI and socket for container discovery
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Use host namespaces for full visibility
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - RESOLVER_PORT=3000
+    # Use host network for wildcard localhost TLS
+    network_mode: host
+    depends_on:
+      - resolver
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
