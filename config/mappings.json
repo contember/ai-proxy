@@ -47,5 +47,12 @@
     "port": 1990,
     "createdAt": "2026-01-16T10:13:09.770Z",
     "llmReason": "Hostname 'admin.mapeditor.localhost' matches the pattern where 'mapeditor' is the project name and 'admin' is the service identifier. The local process at port 1990 is a Vite dev server running in '/home/matej21/projects/external/mapeditor/admin' directory, which serves the admin application for the mapeditor project. This is consistent with the existing mapping 'mapeditor-admin.localhost -> process:localhost:1990'."
+  },
+  "admin.clientcare.localhost": {
+    "type": "process",
+    "target": "localhost",
+    "port": 1580,
+    "createdAt": "2026-01-16T14:37:18.153Z",
+    "llmReason": "Hostname 'admin.clientcare.localhost' matches the pattern where 'clientcare' is the project name and 'admin' is the service identifier. The local process at port 1580 is a Vite dev server running in '/home/matej21/projects/contember/clientcare/admin' directory, which serves the admin application for the clientcare project. This follows the same naming convention as the existing 'admin.mapeditor.localhost' mapping."
   }
 }
