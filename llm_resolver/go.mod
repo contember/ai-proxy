@@ -1,4 +1,4 @@
-module github.com/matej21/caddy-llm-proxy/llm_resolver
+module github.com/contember/ai-proxy/llm_resolver
 
 go 1.22
 

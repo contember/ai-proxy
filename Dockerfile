@@ -7,7 +7,7 @@ COPY . /src
 # Build Caddy with the llm_resolver plugin
 # Import the llm_resolver subpackage from the root module
 RUN xcaddy build \
-    --with github.com/matej21/caddy-llm-proxy/llm_resolver=/src/llm_resolver
+    --with github.com/contember/ai-proxy/llm_resolver=/src/llm_resolver
 
 # Runtime stage
 FROM caddy:2-alpine

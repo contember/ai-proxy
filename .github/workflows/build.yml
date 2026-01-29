@@ -45,7 +45,7 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           xcaddy build \
-            --with github.com/matej21/caddy-llm-proxy/llm_resolver=${{ github.workspace }}/llm_resolver \
+            --with github.com/contember/ai-proxy/llm_resolver=${{ github.workspace }}/llm_resolver \
             --output caddy-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
 
       - name: Upload artifact

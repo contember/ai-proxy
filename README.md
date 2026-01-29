@@ -52,7 +52,7 @@ curl -k https://myapp.localhost
 go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 
 # Build Caddy with the plugin
-xcaddy build --with github.com/matej21/caddy-llm-proxy/llm_resolver=./llm_resolver
+xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
 
 # Run
 OPENROUTER_API_KEY=your-key ./caddy run --config Caddyfile
@@ -64,7 +64,7 @@ On macOS, running inside Docker limits process discovery (can only see processes
 
 ```bash
 # Build
-xcaddy build --with github.com/matej21/caddy-llm-proxy/llm_resolver=./llm_resolver
+xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
 
 # Run (requires sudo for ports 80/443)
 sudo OPENROUTER_API_KEY=your-key ./caddy run --config Caddyfile
