@@ -17,6 +17,21 @@ A Caddy module that provides LLM-based dynamic routing for local development. It
 
 ## Quick Start
 
+### Pre-built Binaries
+
+Download pre-built binaries from [Releases](../../releases):
+
+- `caddy-linux-amd64` - Linux x86_64
+- `caddy-linux-arm64` - Linux ARM64
+- `caddy-darwin-amd64` - macOS Intel
+- `caddy-darwin-arm64` - macOS Apple Silicon
+
+```bash
+# Download and run (example for macOS ARM64)
+chmod +x caddy-darwin-arm64
+sudo OPENROUTER_API_KEY=your-key ./caddy-darwin-arm64 run --config Caddyfile
+```
+
 ### Using Docker Compose
 
 ```bash
