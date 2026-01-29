@@ -168,6 +168,173 @@ function buildPrompt(
   return prompt;
 }
 
+export async function resolveRelatedService(
+  originHostname: string,
+  originMapping: { type: string; target: string; port: number } | null,
+  serviceName: string,
+  userPrompt?: string
+): Promise<ResolveResult> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is not set");
+  }
+
+  const model = process.env.MODEL || "anthropic/claude-haiku-4.5";
+
+  // Gather context
+  const [processes, containers, mappings] = await Promise.all([
+    discoverLocalProcesses(),
+    discoverDockerContainers(),
+    loadMappings(),
+  ]);
+
+  const prompt = buildRelatedServicePrompt(
+    originHostname,
+    originMapping,
+    serviceName,
+    processes,
+    containers,
+    mappings,
+    userPrompt
+  );
+
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content: getRelatedServiceSystemPrompt(),
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("No response from LLM");
+  }
+
+  try {
+    const jsonContent = content
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    const result: LLMResponse = JSON.parse(jsonContent);
+    validateResult(result);
+    return result;
+  } catch (e) {
+    throw new Error(`Failed to parse LLM response: ${content}`);
+  }
+}
+
+function getRelatedServiceSystemPrompt(): string {
+  return `You are a routing resolver for a local development proxy. Your job is to find a related service for a given origin service.
+
+You will receive:
+1. The origin hostname and where it routes to (e.g., "app.mapeditor.localhost" -> process on port 5173)
+2. The service name being requested (e.g., "api", "backend", "db")
+3. A list of locally running processes with their ports, commands, arguments, and working directories
+4. A list of Docker containers with their names, images, exposed ports, IP addresses, and working directories
+5. Current routing mappings for context
+
+Your task is to find the related service. Consider:
+- If origin is "app.mapeditor.localhost" and service is "api", look for an API/backend service in the same project (mapeditor)
+- Working directories are key - look for services in the same project folder
+- Docker compose services often have related names (app, api, db, redis, etc.)
+- Common patterns: frontend+backend, app+api, web+server
+
+Respond with a JSON object:
+{
+  "type": "process" | "docker",
+  "target": "localhost" for process, or container name for docker,
+  "port": the port number to connect to,
+  "reason": "brief explanation of why this target was chosen"
+}
+
+If no suitable target is found, still provide your best guess with explanation.`;
+}
+
+function buildRelatedServicePrompt(
+  originHostname: string,
+  originMapping: { type: string; target: string; port: number } | null,
+  serviceName: string,
+  processes: LocalProcess[],
+  containers: DockerContainer[],
+  mappings: Mappings,
+  userPrompt?: string
+): string {
+  let prompt = `## Request Context\n`;
+  prompt += `Origin hostname: ${originHostname}\n`;
+  if (originMapping) {
+    prompt += `Origin routes to: ${originMapping.type}:${originMapping.target}:${originMapping.port}\n`;
+  }
+  prompt += `Looking for related service: "${serviceName}"\n\n`;
+
+  prompt += "## Local Processes\n";
+  if (processes.length === 0) {
+    prompt += "No local processes with open ports found.\n";
+  } else {
+    for (const proc of processes) {
+      prompt += `- Port ${proc.port}: ${proc.command}`;
+      if (proc.args) prompt += ` (args: ${proc.args})`;
+      if (proc.workdir) prompt += ` [workdir: ${proc.workdir}]`;
+      prompt += "\n";
+    }
+  }
+
+  prompt += "\n## Docker Containers\n";
+  if (containers.length === 0) {
+    prompt += "No Docker containers found.\n";
+  } else {
+    for (const container of containers) {
+      prompt += `- ${container.name} (image: ${container.image})`;
+      if (container.ports.length > 0) prompt += ` ports: ${container.ports.join(", ")}`;
+      if (container.ip) prompt += ` [ip: ${container.ip}]`;
+      if (container.workdir) prompt += ` [workdir: ${container.workdir}]`;
+      prompt += "\n";
+    }
+  }
+
+  prompt += "\n## Current Mappings\n";
+  const mappingEntries = Object.entries(mappings);
+  if (mappingEntries.length === 0) {
+    prompt += "No existing mappings.\n";
+  } else {
+    for (const [host, mapping] of mappingEntries) {
+      prompt += `- ${host} -> ${mapping.type}:${mapping.target}:${mapping.port}`;
+      if (mapping.llmReason) prompt += ` (${mapping.llmReason})`;
+      prompt += "\n";
+    }
+  }
+
+  if (userPrompt) {
+    prompt += `\n## Additional Context from User\n${userPrompt}\n`;
+  }
+
+  return prompt;
+}
+
 function validateResult(result: unknown): asserts result is LLMResponse {
   if (typeof result !== "object" || result === null) {
     throw new Error("Result must be an object");
