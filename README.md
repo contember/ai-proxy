@@ -6,8 +6,9 @@ A Caddy module that provides LLM-based dynamic routing for local development. It
 
 - **Dynamic hostname resolution** using LLM (Claude via OpenRouter)
 - **Automatic service discovery**:
-  - Local processes with open ports (via `ss` or `/proc`)
+  - Local processes with open ports (Linux: `ss`/`/proc`, macOS: `lsof`)
   - Docker containers (via Docker API)
+- **Cross-platform**: Works on Linux and macOS
 - **On-demand TLS certificates** for `*.localhost` domains
 - **Persistent mapping cache** (JSON file)
 - **Debug dashboard** at `proxy.localhost` or `/_debug`
@@ -41,6 +42,20 @@ xcaddy build --with github.com/matej21/caddy-llm-proxy/llm_resolver=./llm_resolv
 # Run
 OPENROUTER_API_KEY=your-key ./caddy run --config Caddyfile
 ```
+
+### Running on macOS
+
+On macOS, running inside Docker limits process discovery (can only see processes inside the container). For full local process visibility, run natively:
+
+```bash
+# Build
+xcaddy build --with github.com/matej21/caddy-llm-proxy/llm_resolver=./llm_resolver
+
+# Run (requires sudo for ports 80/443)
+sudo OPENROUTER_API_KEY=your-key ./caddy run --config Caddyfile
+```
+
+The proxy uses `lsof` on macOS to discover listening processes, which works without any special privileges when running natively.
 
 ## Configuration
 

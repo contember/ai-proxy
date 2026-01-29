@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -22,8 +23,12 @@ type LocalProcess struct {
 // Processes to filter out (system/non-dev)
 var ignoredCommands = map[string]bool{
 	"docker-proxy":    true,
+	"com.docker.vpnki": true,
+	"vpnkit":          true,
 	"code":            true,
+	"code-helper":     true,
 	"spotify":         true,
+	"Spotify":         true,
 	"jetbrains-toolb": true,
 	"phpstorm":        true,
 	"webstorm":        true,
@@ -31,12 +36,20 @@ var ignoredCommands = map[string]bool{
 	"goland":          true,
 	"chrome":          true,
 	"chromium":        true,
+	"Google Chrome":   true,
 	"firefox":         true,
+	"Firefox":         true,
+	"Safari":          true,
 	"slack":           true,
+	"Slack":           true,
 	"discord":         true,
+	"Discord":         true,
 	"telegram":        true,
+	"Telegram":        true,
 	"signal":          true,
+	"Signal":          true,
 	"zoom":            true,
+	"zoom.us":         true,
 	"cupsd":           true,
 	"caddy":           true,
 	"systemd":         true,
@@ -44,6 +57,11 @@ var ignoredCommands = map[string]bool{
 	"pulseaudio":      true,
 	"pipewire":        true,
 	"fsnotifier":      true,
+	"launchd":         true,
+	"mDNSResponder":   true,
+	"rapportd":        true,
+	"sharingd":        true,
+	"identityservices": true,
 }
 
 // Workdirs that indicate container/system processes
@@ -68,17 +86,29 @@ var ignoredArgsPatterns = []string{
 	"datagrip",
 	"rubymine",
 	"pycharm",
+	"android studio",
+	"com.apple.",
+	"apple.systempreferences",
 }
 
 // DiscoverLocalProcesses discovers locally running processes with open ports
 func DiscoverLocalProcesses() ([]LocalProcess, error) {
-	// Try ss first (faster), fallback to /proc parsing
-	processes, err := tryWithSs()
-	if err != nil || len(processes) == 0 {
-		processes, err = parseFromProc()
-		if err != nil {
-			return nil, err
+	var processes []LocalProcess
+	var err error
+
+	if runtime.GOOS == "darwin" {
+		// macOS: use lsof
+		processes, err = discoverWithLsof()
+	} else {
+		// Linux: try ss first, fallback to /proc
+		processes, err = tryWithSs()
+		if err != nil || len(processes) == 0 {
+			processes, err = parseFromProc()
 		}
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	// Filter out system/non-dev processes
@@ -111,7 +141,106 @@ func shouldIgnoreByArgs(args string) bool {
 	return false
 }
 
-// tryWithSs uses the ss command to discover processes (faster)
+// discoverWithLsof uses lsof to discover listening processes (macOS)
+// lsof -iTCP -sTCP:LISTEN -n -P
+func discoverWithLsof() ([]LocalProcess, error) {
+	cmd := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-n", "-P")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var processes []LocalProcess
+	seenPorts := make(map[int]bool)
+	lines := strings.Split(string(output), "\n")
+
+	// lsof output format:
+	// COMMAND   PID   USER   FD   TYPE   DEVICE SIZE/OFF NODE NAME
+	// node    12345   user   23u  IPv4   0x...      0t0  TCP *:3000 (LISTEN)
+
+	for _, line := range lines[1:] { // Skip header
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) < 9 {
+			continue
+		}
+
+		command := parts[0]
+		pid, err := strconv.Atoi(parts[1])
+		if err != nil {
+			continue
+		}
+
+		// Parse the NAME field (last or second-to-last) for port
+		// Format: *:3000 or 127.0.0.1:3000 or [::1]:3000
+		name := parts[len(parts)-1]
+		if name == "(LISTEN)" && len(parts) >= 10 {
+			name = parts[len(parts)-2]
+		}
+
+		// Extract port from name
+		portMatch := regexp.MustCompile(`:(\d+)$`).FindStringSubmatch(name)
+		if len(portMatch) < 2 {
+			continue
+		}
+		port, _ := strconv.Atoi(portMatch[1])
+
+		if port < 1024 || seenPorts[port] {
+			continue
+		}
+		seenPorts[port] = true
+
+		// Get full command args and workdir using ps and lsof
+		args := cleanArgs(getProcessArgsMac(pid))
+		workdir := getProcessWorkdirMac(pid)
+
+		processes = append(processes, LocalProcess{
+			Port:    port,
+			PID:     pid,
+			Command: command,
+			Args:    args,
+			Workdir: workdir,
+		})
+	}
+
+	return processes, nil
+}
+
+// getProcessArgsMac gets process arguments on macOS using ps
+func getProcessArgsMac(pid int) string {
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "args=")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// getProcessWorkdirMac gets process working directory on macOS using lsof
+func getProcessWorkdirMac(pid int) string {
+	cmd := exec.Command("lsof", "-p", strconv.Itoa(pid), "-Fn", "-d", "cwd")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	// lsof output format:
+	// p12345
+	// fcwd
+	// n/path/to/workdir
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "n") {
+			return line[1:] // Remove 'n' prefix
+		}
+	}
+	return ""
+}
+
+// tryWithSs uses the ss command to discover processes (Linux, faster)
 func tryWithSs() ([]LocalProcess, error) {
 	cmd := exec.Command("ss", "-tlnp")
 	output, err := cmd.Output()
@@ -171,7 +300,7 @@ func tryWithSs() ([]LocalProcess, error) {
 	return processes, nil
 }
 
-// parseFromProc parses /proc/net/tcp to discover processes (slower fallback)
+// parseFromProc parses /proc/net/tcp to discover processes (Linux, slower fallback)
 func parseFromProc() ([]LocalProcess, error) {
 	var processes []LocalProcess
 	seenPorts := make(map[int]bool)
@@ -241,7 +370,7 @@ func parseFromProc() ([]LocalProcess, error) {
 	return processes, nil
 }
 
-// buildInodePidMap builds a map of socket inode -> PID
+// buildInodePidMap builds a map of socket inode -> PID (Linux only)
 func buildInodePidMap() map[string]int {
 	result := make(map[string]int)
 
@@ -287,7 +416,7 @@ func buildInodePidMap() map[string]int {
 	return result
 }
 
-// getProcessCommand gets the command name for a PID
+// getProcessCommand gets the command name for a PID (Linux)
 func getProcessCommand(pid int) string {
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "comm"))
 	if err != nil {
@@ -296,7 +425,7 @@ func getProcessCommand(pid int) string {
 	return strings.TrimSpace(string(data))
 }
 
-// getProcessArgs gets the command line arguments for a PID
+// getProcessArgs gets the command line arguments for a PID (Linux)
 func getProcessArgs(pid int) string {
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	if err != nil {
@@ -307,7 +436,7 @@ func getProcessArgs(pid int) string {
 	return strings.TrimSpace(args)
 }
 
-// getProcessWorkdir gets the working directory for a PID
+// getProcessWorkdir gets the working directory for a PID (Linux)
 func getProcessWorkdir(pid int) string {
 	link, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
 	if err != nil {
