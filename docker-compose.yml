@@ -1,38 +1,26 @@
 services:
-  resolver:
-    image: oven/bun:1
-    working_dir: /app
-    command: bun run src/index.ts
-    user: root
-    privileged: true
+  llm-proxy:
+    build: .
     environment:
-      - PORT=3000
-      - MODEL=${MODEL:-anthropic/claude-haiku-4.5}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - COMPOSE_PROJECT=proxy
+      - MODEL=${MODEL:-anthropic/claude-haiku-4.5}
+      - COMPOSE_PROJECT=llm-proxy
     volumes:
-      # Mount source code
-      - .:/app
-      # Docker CLI and socket for container discovery
-      - /usr/bin/docker:/usr/bin/docker:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    # Use host namespaces for full visibility
-    network_mode: host
-    pid: host
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persistent storage for mappings and TLS certificates
       - caddy_data:/data
       - caddy_config:/config
-    environment:
-      - RESOLVER_PORT=3000
-    # Use host network for wildcard localhost TLS
+      # Docker socket for container discovery
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Use host network for:
+    # - Full visibility of local processes
+    # - Access to Docker container IPs
+    # - Binding to port 443
     network_mode: host
-    depends_on:
-      - resolver
+    # Use host PID namespace for process discovery
+    pid: host
+    # Run as root with privileged for full process visibility
+    user: root
+    privileged: true
     restart: unless-stopped
 
 volumes:

@@ -1,17 +1,45 @@
 {
+	# Use local CA for development certificates
 	local_certs
 	skip_install_trust
 
+	# On-demand TLS - approve all .localhost domains
 	on_demand_tls {
-		ask http://localhost:{$RESOLVER_PORT:3000}/_caddy/check
+		ask http://127.0.0.1:80/_tls_check
+	}
+
+	# Disable auto HTTPS redirect so we can handle port 80 ourselves
+	auto_https disable_redirects
+}
+
+# HTTP server on port 80 - handles TLS check and redirects
+:80 {
+	# TLS check endpoint (must respond before redirect)
+	@tls_check path /_tls_check
+	handle @tls_check {
+		respond "OK" 200
+	}
+
+	# Redirect everything else to HTTPS
+	handle {
+		redir https://{host}{uri} permanent
 	}
 }
 
-# Catch-all for any hostname ending in .localhost
+# HTTPS server on port 443
 :443 {
 	tls {
 		on_demand
 	}
 
-	reverse_proxy localhost:{$RESOLVER_PORT:3000}
+	# LLM resolver middleware - sets {http.vars.upstream}
+	llm_resolver {
+		openrouter_api_key {$OPENROUTER_API_KEY}
+		model {$MODEL:anthropic/claude-haiku-4.5}
+		cache_file /data/mappings.json
+		compose_project {$COMPOSE_PROJECT:llm-proxy}
+	}
+
+	# Reverse proxy to the resolved upstream
+	reverse_proxy {http.vars.upstream}
 }

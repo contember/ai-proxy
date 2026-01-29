@@ -1,15 +1,110 @@
-# proxy
+# Caddy LLM Proxy
 
-To install dependencies:
+A Caddy module that provides LLM-based dynamic routing for local development. It automatically discovers local processes and Docker containers, then uses an LLM (via OpenRouter) to intelligently route requests based on hostname patterns.
+
+## Features
+
+- **Dynamic hostname resolution** using LLM (Claude via OpenRouter)
+- **Automatic service discovery**:
+  - Local processes with open ports (via `ss` or `/proc`)
+  - Docker containers (via Docker API)
+- **On-demand TLS certificates** for `*.localhost` domains
+- **Persistent mapping cache** (JSON file)
+- **Debug dashboard** at `proxy.localhost` or `/_debug`
+- **Second-level proxy** for inter-service communication (`/_proxy/serviceName/path`)
+- **REST API** for managing mappings (`/_api/mappings/`)
+
+## Quick Start
+
+### Using Docker Compose
 
 ```bash
-bun install
+# Set your OpenRouter API key
+export OPENROUTER_API_KEY=your-key-here
+
+# Build and run
+docker compose up -d
+
+# Test
+curl -k https://myapp.localhost
 ```
 
-To run:
+### Building Manually
 
 ```bash
-bun run index.ts
+# Install xcaddy
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+# Build Caddy with the plugin
+xcaddy build --with github.com/matej21/caddy-llm-proxy/llm_resolver=./llm_resolver
+
+# Run
+OPENROUTER_API_KEY=your-key ./caddy run --config Caddyfile
 ```
 
-This project was created using `bun init` in bun v1.3.2. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENROUTER_API_KEY` | (required) | API key for OpenRouter |
+| `MODEL` | `anthropic/claude-haiku-4.5` | LLM model to use |
+| `COMPOSE_PROJECT` | - | Own compose project name to filter out |
+
+### Caddyfile Directives
+
+```caddyfile
+llm_resolver {
+    openrouter_api_key {env.OPENROUTER_API_KEY}
+    model anthropic/claude-haiku-4.5
+    cache_file /data/mappings.json
+    compose_project myproject
+}
+```
+
+## Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/_tls_check` | TLS verification for on-demand certificates |
+| `/_debug` | Debug dashboard (HTML or JSON based on Accept header) |
+| `/_api/mappings/` | GET: list all mappings |
+| `/_api/mappings/{hostname}` | GET/PUT/DELETE: manage specific mapping |
+| `/_proxy/{service}/{path}` | Second-level proxy for inter-service communication |
+
+## Query Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `?force` | Force re-resolution (bypass cache) |
+| `?prompt=text` | Provide additional context to the LLM |
+
+## How It Works
+
+1. Request arrives with a hostname (e.g., `api.myproject.localhost`)
+2. Module checks the mapping cache
+3. If not cached, it:
+   - Discovers local processes with open ports
+   - Discovers running Docker containers
+   - Calls the LLM with hostname + service list
+   - LLM returns the best matching target
+   - Result is cached
+4. Request is proxied to the resolved target
+
+## Development
+
+```bash
+# Run with hot reload
+go run . run --config Caddyfile
+
+# Build Docker image
+docker build -t llm-proxy .
+
+# Run tests
+go test ./...
+```
+
+## License
+
+MIT
