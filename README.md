@@ -1,10 +1,10 @@
 # Caddy LLM Proxy
 
-A Caddy module that provides LLM-based dynamic routing for local development. It automatically discovers local processes and Docker containers, then uses an LLM (via OpenRouter) to intelligently route requests based on hostname patterns.
+A Caddy module that provides LLM-based dynamic routing for local development. It automatically discovers local processes and Docker containers, then uses an LLM to intelligently route requests based on hostname patterns. Supports any OpenAI-compatible API (OpenRouter, Ollama, LM Studio, vLLM, etc.).
 
 ## Features
 
-- **Dynamic hostname resolution** using LLM (Claude via OpenRouter)
+- **Dynamic hostname resolution** using any OpenAI-compatible LLM API
 - **Automatic service discovery**:
   - Local processes with open ports (Linux: `ss`/`/proc`, macOS: `lsof`)
   - Docker containers (via Docker API)
@@ -29,14 +29,18 @@ Download pre-built binaries from [Releases](../../releases):
 ```bash
 # Download and run (example for macOS ARM64)
 chmod +x caddy-darwin-arm64
-sudo OPENROUTER_API_KEY=your-key ./caddy-darwin-arm64 run --config Caddyfile
+sudo LLM_API_KEY=your-key ./caddy-darwin-arm64 run --config Caddyfile
 ```
 
 ### Using Docker Compose
 
 ```bash
-# Set your OpenRouter API key
-export OPENROUTER_API_KEY=your-key-here
+# Set your API key
+export LLM_API_KEY=your-key-here
+
+# Optionally use a local LLM
+export LLM_API_URL=http://localhost:11434/v1/chat/completions  # Ollama
+export MODEL=llama3.2
 
 # Build and run
 docker compose up -d
@@ -55,7 +59,7 @@ go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
 
 # Run
-OPENROUTER_API_KEY=your-key ./caddy run --config Caddyfile
+LLM_API_KEY=your-key ./caddy run --config Caddyfile
 ```
 
 ### Running on macOS
@@ -67,7 +71,7 @@ On macOS, running inside Docker limits process discovery (can only see processes
 xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
 
 # Run (requires sudo for ports 80/443)
-sudo OPENROUTER_API_KEY=your-key ./caddy run --config Caddyfile
+sudo LLM_API_KEY=your-key ./caddy run --config Caddyfile
 ```
 
 The proxy uses `lsof` on macOS to discover listening processes, which works without any special privileges when running natively.
@@ -78,7 +82,8 @@ The proxy uses `lsof` on macOS to discover listening processes, which works with
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENROUTER_API_KEY` | (required) | API key for OpenRouter |
+| `LLM_API_KEY` | (required) | API key for the LLM API |
+| `LLM_API_URL` | `https://openrouter.ai/api/v1/chat/completions` | LLM API endpoint (OpenAI-compatible) |
 | `MODEL` | `anthropic/claude-haiku-4.5` | LLM model to use |
 | `COMPOSE_PROJECT` | - | Own compose project name to filter out |
 
@@ -86,7 +91,8 @@ The proxy uses `lsof` on macOS to discover listening processes, which works with
 
 ```caddyfile
 llm_resolver {
-    openrouter_api_key {env.OPENROUTER_API_KEY}
+    api_key {env.LLM_API_KEY}
+    api_url {env.LLM_API_URL}
     model anthropic/claude-haiku-4.5
     cache_file /data/mappings.json
     compose_project myproject

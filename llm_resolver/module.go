@@ -17,8 +17,11 @@ func init() {
 // LLMResolver is a Caddy HTTP handler module that resolves hostnames
 // to upstream targets using an LLM (via OpenRouter API).
 type LLMResolver struct {
-	// OpenRouterAPIKey is the API key for OpenRouter
-	OpenRouterAPIKey string `json:"openrouter_api_key,omitempty"`
+	// APIKey is the API key for the LLM API
+	APIKey string `json:"api_key,omitempty"`
+
+	// APIURL is the URL for the LLM API (default: https://openrouter.ai/api/v1/chat/completions)
+	APIURL string `json:"api_url,omitempty"`
 
 	// Model is the LLM model to use (default: anthropic/claude-haiku-4.5)
 	Model string `json:"model,omitempty"`
@@ -66,7 +69,7 @@ func (m *LLMResolver) Provision(ctx caddy.Context) error {
 	}
 
 	// Initialize resolver
-	m.resolver = NewResolver(m.OpenRouterAPIKey, m.Model, m.ComposeProject, m.logger)
+	m.resolver = NewResolver(m.APIKey, m.APIURL, m.Model, m.ComposeProject, m.logger)
 
 	m.logger.Info("LLM resolver provisioned",
 		zap.String("model", m.Model),
@@ -92,11 +95,16 @@ func (m *LLMResolver) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
 			switch d.Val() {
-			case "openrouter_api_key":
+			case "api_key":
 				if !d.NextArg() {
 					return d.ArgErr()
 				}
-				m.OpenRouterAPIKey = d.Val()
+				m.APIKey = d.Val()
+			case "api_url":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				m.APIURL = d.Val()
 			case "model":
 				if !d.NextArg() {
 					return d.ArgErr()

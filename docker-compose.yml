@@ -2,7 +2,8 @@ services:
   llm-proxy:
     build: .
     environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_API_URL=${LLM_API_URL:-https://openrouter.ai/api/v1/chat/completions}
       - MODEL=${MODEL:-anthropic/claude-haiku-4.5}
       - COMPOSE_PROJECT=llm-proxy
     volumes:

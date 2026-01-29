@@ -34,7 +34,8 @@
 
 	# LLM resolver middleware - sets {http.vars.upstream}
 	llm_resolver {
-		openrouter_api_key {$OPENROUTER_API_KEY}
+		api_key {$LLM_API_KEY}
+		api_url {$LLM_API_URL:https://openrouter.ai/api/v1/chat/completions}
 		model {$MODEL:anthropic/claude-haiku-4.5}
 		cache_file /data/mappings.json
 		compose_project {$COMPOSE_PROJECT:llm-proxy}

@@ -34,6 +34,7 @@ llm_resolver/          # Caddy module (Go package)
 
 ## Environment Variables
 
-- `OPENROUTER_API_KEY` - Required API key for OpenRouter
+- `LLM_API_KEY` - Required API key for the LLM API
+- `LLM_API_URL` - LLM API URL (default: `https://openrouter.ai/api/v1/chat/completions`)
 - `MODEL` - LLM model (default: `anthropic/claude-haiku-4.5`)
 - `COMPOSE_PROJECT` - Own compose project name to filter out

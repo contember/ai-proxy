@@ -13,11 +13,12 @@ import (
 	"go.uber.org/zap"
 )
 
-const openRouterAPIURL = "https://openrouter.ai/api/v1/chat/completions"
+const defaultAPIURL = "https://openrouter.ai/api/v1/chat/completions"
 
 // Resolver handles LLM-based target resolution
 type Resolver struct {
 	apiKey         string
+	apiURL         string
 	model          string
 	composeProject string
 	logger         *zap.Logger
@@ -25,9 +26,13 @@ type Resolver struct {
 }
 
 // NewResolver creates a new resolver instance
-func NewResolver(apiKey, model, composeProject string, logger *zap.Logger) *Resolver {
+func NewResolver(apiKey, apiURL, model, composeProject string, logger *zap.Logger) *Resolver {
+	if apiURL == "" {
+		apiURL = defaultAPIURL
+	}
 	return &Resolver{
 		apiKey:         apiKey,
+		apiURL:         apiURL,
 		model:          model,
 		composeProject: composeProject,
 		logger:         logger,
@@ -48,7 +53,7 @@ type LLMResponse struct {
 // ResolveTarget resolves a hostname to a target using the LLM
 func (r *Resolver) ResolveTarget(hostname, userPrompt string, existingMappings Mappings) (*RouteMapping, error) {
 	if r.apiKey == "" {
-		return nil, fmt.Errorf("OPENROUTER_API_KEY is not set")
+		return nil, fmt.Errorf("API key is not set")
 	}
 
 	// Gather context
@@ -88,7 +93,7 @@ func (r *Resolver) ResolveRelatedService(
 	existingMappings Mappings,
 ) (*RouteMapping, error) {
 	if r.apiKey == "" {
-		return nil, fmt.Errorf("OPENROUTER_API_KEY is not set")
+		return nil, fmt.Errorf("API key is not set")
 	}
 
 	// Gather context
@@ -334,7 +339,7 @@ func (r *Resolver) callLLM(systemPrompt, userPrompt string) (*LLMResponse, error
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", openRouterAPIURL, bytes.NewReader(jsonBody))
+	req, err := http.NewRequest("POST", r.apiURL, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
