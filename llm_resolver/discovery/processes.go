@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"bufio"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+)
+
+// Pre-compiled regexes for port and PID extraction
+var (
+	portExtractRegex = regexp.MustCompile(`:(\d+)$`)
+	pidExtractRegex  = regexp.MustCompile(`pid=(\d+)`)
+	socketRegex      = regexp.MustCompile(`socket:\[(\d+)\]`)
 )
 
 // LocalProcess represents a discovered local process
@@ -144,7 +152,10 @@ func shouldIgnoreByArgs(args string) bool {
 // discoverWithLsof uses lsof to discover listening processes (macOS)
 // lsof -iTCP -sTCP:LISTEN -n -P
 func discoverWithLsof() ([]LocalProcess, error) {
-	cmd := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-n", "-P")
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "lsof", "-iTCP", "-sTCP:LISTEN", "-n", "-P")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -182,7 +193,7 @@ func discoverWithLsof() ([]LocalProcess, error) {
 		}
 
 		// Extract port from name
-		portMatch := regexp.MustCompile(`:(\d+)$`).FindStringSubmatch(name)
+		portMatch := portExtractRegex.FindStringSubmatch(name)
 		if len(portMatch) < 2 {
 			continue
 		}
@@ -211,7 +222,10 @@ func discoverWithLsof() ([]LocalProcess, error) {
 
 // getProcessArgsMac gets process arguments on macOS using ps
 func getProcessArgsMac(pid int) string {
-	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "args=")
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "args=")
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -221,7 +235,10 @@ func getProcessArgsMac(pid int) string {
 
 // getProcessWorkdirMac gets process working directory on macOS using lsof
 func getProcessWorkdirMac(pid int) string {
-	cmd := exec.Command("lsof", "-p", strconv.Itoa(pid), "-Fn", "-d", "cwd")
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "lsof", "-p", strconv.Itoa(pid), "-Fn", "-d", "cwd")
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -242,7 +259,10 @@ func getProcessWorkdirMac(pid int) string {
 
 // tryWithSs uses the ss command to discover processes (Linux, faster)
 func tryWithSs() ([]LocalProcess, error) {
-	cmd := exec.Command("ss", "-tlnp")
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ss", "-tlnp")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -266,7 +286,7 @@ func tryWithSs() ([]LocalProcess, error) {
 		processInfo := strings.Join(parts[5:], " ")
 
 		// Extract port from local address
-		portMatch := regexp.MustCompile(`:(\d+)$`).FindStringSubmatch(localAddr)
+		portMatch := portExtractRegex.FindStringSubmatch(localAddr)
 		if len(portMatch) < 2 {
 			continue
 		}
@@ -276,7 +296,7 @@ func tryWithSs() ([]LocalProcess, error) {
 		}
 
 		// Extract PID from process info
-		pidMatch := regexp.MustCompile(`pid=(\d+)`).FindStringSubmatch(processInfo)
+		pidMatch := pidExtractRegex.FindStringSubmatch(processInfo)
 		if len(pidMatch) < 2 {
 			continue
 		}
@@ -309,62 +329,74 @@ func parseFromProc() ([]LocalProcess, error) {
 	inodeToPid := buildInodePidMap()
 
 	for _, tcpFile := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
-		file, err := os.Open(tcpFile)
+		procs, err := parseTcpFile(tcpFile, seenPorts, inodeToPid)
 		if err != nil {
 			continue
 		}
-		defer file.Close()
+		processes = append(processes, procs...)
+	}
 
-		scanner := bufio.NewScanner(file)
-		// Skip header
-		scanner.Scan()
+	return processes, nil
+}
 
-		for scanner.Scan() {
-			line := scanner.Text()
-			parts := strings.Fields(line)
-			if len(parts) < 10 {
-				continue
-			}
+// parseTcpFile parses a single /proc/net/tcp file
+func parseTcpFile(tcpFile string, seenPorts map[int]bool, inodeToPid map[string]int) ([]LocalProcess, error) {
+	file, err := os.Open(tcpFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
-			localAddr := parts[1]
-			state := parts[3]
+	var processes []LocalProcess
+	scanner := bufio.NewScanner(file)
+	// Skip header
+	scanner.Scan()
 
-			// Only LISTEN state (0A)
-			if state != "0A" {
-				continue
-			}
-
-			// Extract port (hex)
-			addrParts := strings.Split(localAddr, ":")
-			if len(addrParts) < 2 {
-				continue
-			}
-			port64, _ := strconv.ParseInt(addrParts[1], 16, 32)
-			port := int(port64)
-
-			if port < 1024 || seenPorts[port] {
-				continue
-			}
-			seenPorts[port] = true
-
-			inode := parts[9]
-			pid, ok := inodeToPid[inode]
-			if !ok {
-				continue
-			}
-
-			command := getProcessCommand(pid)
-			args := cleanArgs(getProcessArgs(pid))
-			workdir := getProcessWorkdir(pid)
-
-			processes = append(processes, LocalProcess{
-				Port:    port,
-				PID:     pid,
-				Command: command,
-				Args:    args,
-				Workdir: workdir,
-			})
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Fields(line)
+		if len(parts) < 10 {
+			continue
 		}
+
+		localAddr := parts[1]
+		state := parts[3]
+
+		// Only LISTEN state (0A)
+		if state != "0A" {
+			continue
+		}
+
+		// Extract port (hex)
+		addrParts := strings.Split(localAddr, ":")
+		if len(addrParts) < 2 {
+			continue
+		}
+		port64, _ := strconv.ParseInt(addrParts[1], 16, 32)
+		port := int(port64)
+
+		if port < 1024 || seenPorts[port] {
+			continue
+		}
+		seenPorts[port] = true
+
+		inode := parts[9]
+		pid, ok := inodeToPid[inode]
+		if !ok {
+			continue
+		}
+
+		command := getProcessCommand(pid)
+		args := cleanArgs(getProcessArgs(pid))
+		workdir := getProcessWorkdir(pid)
+
+		processes = append(processes, LocalProcess{
+			Port:    port,
+			PID:     pid,
+			Command: command,
+			Args:    args,
+			Workdir: workdir,
+		})
 	}
 
 	return processes, nil
@@ -379,8 +411,6 @@ func buildInodePidMap() map[string]int {
 	if err != nil {
 		return result
 	}
-
-	socketRegex := regexp.MustCompile(`socket:\[(\d+)\]`)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {

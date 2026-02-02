@@ -58,10 +58,10 @@ func (c *Cache) Load() error {
 
 // Save writes mappings to the cache file atomically
 func (c *Cache) Save() error {
-	c.mu.RLock()
-	data, err := json.MarshalIndent(c.mappings, "", "  ")
-	c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
+	data, err := json.MarshalIndent(c.mappings, "", "  ")
 	if err != nil {
 		return err
 	}

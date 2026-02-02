@@ -1,11 +1,17 @@
 package llm_resolver
 
 import (
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 )
 
 func init() {
@@ -40,6 +46,9 @@ type LLMResolver struct {
 
 	// resolver handles LLM API calls
 	resolver *Resolver
+
+	// resolveGroup deduplicates concurrent LLM requests for the same hostname
+	resolveGroup singleflight.Group
 }
 
 // CaddyModule returns the Caddy module information.
@@ -81,7 +90,26 @@ func (m *LLMResolver) Provision(ctx caddy.Context) error {
 
 // Validate validates the module configuration.
 func (m *LLMResolver) Validate() error {
-	// API key can be empty - we'll check at runtime
+	// Validate API URL if set
+	if m.APIURL != "" {
+		if _, err := url.Parse(m.APIURL); err != nil {
+			return fmt.Errorf("invalid api_url: %v", err)
+		}
+	}
+
+	// Validate cache file path is writable
+	dir := filepath.Dir(m.CacheFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("cache directory not writable: %v", err)
+	}
+
+	// Test write access by creating a temp file
+	testFile := m.CacheFile + ".test"
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		return fmt.Errorf("cache file not writable: %v", err)
+	}
+	os.Remove(testFile)
+
 	return nil
 }
 

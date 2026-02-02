@@ -1,11 +1,19 @@
 package discovery
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
+
+const commandTimeout = 10 * time.Second
+
+// Pre-compiled regex for port extraction
+var portRegex = regexp.MustCompile(`^(\d+)`)
 
 // DockerContainer represents a discovered Docker container
 type DockerContainer struct {
@@ -46,13 +54,16 @@ type dockerInspectOutput struct {
 
 // DiscoverDockerContainers discovers running Docker containers
 func DiscoverDockerContainers(ownComposeProject string) ([]DockerContainer, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
 	// Check if docker is available
-	if err := exec.Command("docker", "info").Run(); err != nil {
+	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
 		return nil, nil // Docker not available, return empty list
 	}
 
 	// Get running containers
-	cmd := exec.Command("docker", "ps", "--format", "{{json .}}")
+	cmd := exec.CommandContext(ctx, "docker", "ps", "--format", "{{json .}}")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -93,7 +104,10 @@ func DiscoverDockerContainers(ownComposeProject string) ([]DockerContainer, erro
 
 // getContainerDetails gets detailed information about a container
 func getContainerDetails(containerID string) (*DockerContainer, error) {
-	cmd := exec.Command("docker", "inspect", containerID)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "inspect", containerID)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -122,12 +136,9 @@ func getContainerDetails(containerID string) (*DockerContainer, error) {
 
 	// Extract exposed ports
 	var ports []int
-	portRegex := regexp.MustCompile(`^(\d+)`)
 	for portSpec := range data.Config.ExposedPorts {
 		if match := portRegex.FindStringSubmatch(portSpec); len(match) > 1 {
-			var port int
-			if _, err := parsePort(match[1]); err == nil {
-				port = mustParsePort(match[1])
+			if port, err := parsePort(match[1]); err == nil {
 				ports = append(ports, port)
 			}
 		}
@@ -156,7 +167,10 @@ func getContainerDetails(containerID string) (*DockerContainer, error) {
 
 // GetContainerIP gets the IP address of a container by name or ID
 func GetContainerIP(containerIDOrName string) (string, error) {
-	cmd := exec.Command("docker", "inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", containerIDOrName)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", containerIDOrName)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -164,23 +178,23 @@ func GetContainerIP(containerIDOrName string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// parsePort is a helper to check if string is a valid port
+// parsePort parses and validates a port string, returning error for invalid input
 func parsePort(s string) (int, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty port string")
+	}
 	var port int
 	for _, c := range s {
 		if c < '0' || c > '9' {
-			return 0, nil
+			return 0, fmt.Errorf("invalid character in port: %c", c)
 		}
 		port = port*10 + int(c-'0')
+		if port > 65535 {
+			return 0, fmt.Errorf("port out of range: %d", port)
+		}
+	}
+	if port < 1 {
+		return 0, fmt.Errorf("port must be >= 1")
 	}
 	return port, nil
-}
-
-// mustParsePort parses a port string, panics on error
-func mustParsePort(s string) int {
-	var port int
-	for _, c := range s {
-		port = port*10 + int(c-'0')
-	}
-	return port
 }

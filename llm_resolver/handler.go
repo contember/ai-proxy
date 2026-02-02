@@ -78,7 +78,27 @@ func (m *LLMResolver) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 			zap.Bool("forced", force),
 		)
 
-		mapping, err = m.resolver.ResolveTarget(hostname, userPrompt, m.cache.GetAll())
+		// Use singleflight to deduplicate concurrent requests for same hostname
+		result, err, shared := m.resolveGroup.Do(hostname, func() (interface{}, error) {
+			// Double-check cache inside singleflight (another request may have just finished)
+			if cached := m.cache.Get(hostname); cached != nil && !force {
+				return cached, nil
+			}
+
+			resolved, err := m.resolver.ResolveTarget(hostname, userPrompt, m.cache.GetAll())
+			if err != nil {
+				return nil, err
+			}
+
+			// Cache the result
+			m.cache.Set(hostname, resolved)
+			if err := m.cache.Save(); err != nil {
+				m.logger.Warn("failed to save cache", zap.Error(err))
+			}
+
+			return resolved, nil
+		})
+
 		if err != nil {
 			m.logger.Error("failed to resolve target",
 				zap.String("hostname", hostname),
@@ -88,19 +108,16 @@ func (m *LLMResolver) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 			return nil
 		}
 
+		mapping = result.(*RouteMapping)
+
 		m.logger.Info("resolved target",
 			zap.String("hostname", hostname),
 			zap.String("type", mapping.Type),
 			zap.String("target", mapping.Target),
 			zap.Int("port", mapping.Port),
 			zap.String("reason", mapping.LLMReason),
+			zap.Bool("shared", shared),
 		)
-
-		// Cache the result
-		m.cache.Set(hostname, mapping)
-		if err := m.cache.Save(); err != nil {
-			m.logger.Warn("failed to save cache", zap.Error(err))
-		}
 	}
 
 	// Build upstream URL
@@ -160,16 +177,36 @@ func (m *LLMResolver) handleSecondLevelProxy(w http.ResponseWriter, r *http.Requ
 	}
 
 	if mapping == nil {
-		// Get origin mapping for context
-		originMapping := m.cache.Get(originHostname)
+		// Use singleflight to deduplicate concurrent requests for same cache key
+		result, err, shared := m.resolveGroup.Do(cacheKey, func() (interface{}, error) {
+			// Double-check cache inside singleflight
+			if cached := m.cache.Get(cacheKey); cached != nil && !force {
+				return cached, nil
+			}
 
-		mapping, err = m.resolver.ResolveRelatedService(
-			originHostname,
-			originMapping,
-			serviceName,
-			userPrompt,
-			m.cache.GetAll(),
-		)
+			// Get origin mapping for context
+			originMapping := m.cache.Get(originHostname)
+
+			resolved, err := m.resolver.ResolveRelatedService(
+				originHostname,
+				originMapping,
+				serviceName,
+				userPrompt,
+				m.cache.GetAll(),
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			// Cache the result
+			m.cache.Set(cacheKey, resolved)
+			if err := m.cache.Save(); err != nil {
+				m.logger.Warn("failed to save cache", zap.Error(err))
+			}
+
+			return resolved, nil
+		})
+
 		if err != nil {
 			m.logger.Error("failed to resolve related service",
 				zap.String("origin", originHostname),
@@ -180,19 +217,16 @@ func (m *LLMResolver) handleSecondLevelProxy(w http.ResponseWriter, r *http.Requ
 			return nil
 		}
 
+		mapping = result.(*RouteMapping)
+
 		m.logger.Info("resolved related service",
 			zap.String("origin", originHostname),
 			zap.String("service", serviceName),
 			zap.String("type", mapping.Type),
 			zap.String("target", mapping.Target),
 			zap.Int("port", mapping.Port),
+			zap.Bool("shared", shared),
 		)
-
-		// Cache the result
-		m.cache.Set(cacheKey, mapping)
-		if err := m.cache.Save(); err != nil {
-			m.logger.Warn("failed to save cache", zap.Error(err))
-		}
 	}
 
 	// Build upstream URL
@@ -457,12 +491,21 @@ func extractHostname(r *http.Request) string {
 	if host == "" {
 		host = r.Header.Get("Host")
 	}
-	// Remove port if present
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		// Make sure it's not an IPv6 address
-		if !strings.Contains(host[idx:], "]") {
-			host = host[:idx]
+	// Handle IPv6 addresses: [::1]:port or [2001:db8::1]:8080
+	if strings.HasPrefix(host, "[") {
+		// IPv6 address in brackets
+		if idx := strings.LastIndex(host, "]:"); idx != -1 {
+			// Has port, extract just the bracketed address
+			host = host[:idx+1]
 		}
+		// Remove brackets for cleaner hostname
+		host = strings.TrimPrefix(host, "[")
+		host = strings.TrimSuffix(host, "]")
+		return host
+	}
+	// IPv4 or hostname: remove port if present
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
 	}
 	return host
 }
