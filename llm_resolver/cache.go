@@ -10,13 +10,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// ProcessIdentifier identifies a process for dynamic port resolution
+type ProcessIdentifier struct {
+	Workdir        string `json:"workdir,omitempty"`        // Process working directory
+	CommandPattern string `json:"commandPattern,omitempty"` // Optional regex to match command
+}
+
 // RouteMapping represents a hostname to target mapping
 type RouteMapping struct {
 	Type      string `json:"type"`      // "process" or "docker"
 	Target    string `json:"target"`    // For process: "localhost", for docker: container name
-	Port      int    `json:"port"`      // Target port number
+	Port      int    `json:"port"`      // Target port number (hint/fallback for process type)
 	CreatedAt string `json:"createdAt"` // ISO timestamp
 	LLMReason string `json:"llmReason"` // AI reasoning for the mapping
+
+	// ProcessIdentifier for dynamic port resolution (process type only)
+	ProcessIdentifier *ProcessIdentifier `json:"processIdentifier,omitempty"`
 }
 
 // Mappings is a map of hostname to RouteMapping

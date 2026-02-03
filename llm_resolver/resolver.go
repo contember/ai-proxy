@@ -44,10 +44,12 @@ func NewResolver(apiKey, apiURL, model, composeProject string, logger *zap.Logge
 
 // LLMResponse represents the expected response from the LLM
 type LLMResponse struct {
-	Type   string `json:"type"`
-	Target string `json:"target"`
-	Port   int    `json:"port"`
-	Reason string `json:"reason"`
+	Type           string `json:"type"`
+	Target         string `json:"target"`
+	Port           int    `json:"port"`
+	Reason         string `json:"reason"`
+	Workdir        string `json:"workdir,omitempty"`        // Working directory for process identification
+	CommandPattern string `json:"commandPattern,omitempty"` // Optional regex to match command
 }
 
 // ResolveTarget resolves a hostname to a target using the LLM
@@ -75,13 +77,23 @@ func (r *Resolver) ResolveTarget(hostname, userPrompt string, existingMappings M
 		return nil, err
 	}
 
-	return &RouteMapping{
+	mapping := &RouteMapping{
 		Type:      response.Type,
 		Target:    response.Target,
 		Port:      response.Port,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		LLMReason: response.Reason,
-	}, nil
+	}
+
+	// For process type, create ProcessIdentifier for dynamic port resolution
+	if response.Type == "process" && response.Workdir != "" {
+		mapping.ProcessIdentifier = &ProcessIdentifier{
+			Workdir:        response.Workdir,
+			CommandPattern: response.CommandPattern,
+		}
+	}
+
+	return mapping, nil
 }
 
 // ResolveRelatedService resolves a related service for an origin hostname
@@ -115,13 +127,23 @@ func (r *Resolver) ResolveRelatedService(
 		return nil, err
 	}
 
-	return &RouteMapping{
+	mapping := &RouteMapping{
 		Type:      response.Type,
 		Target:    response.Target,
 		Port:      response.Port,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		LLMReason: response.Reason,
-	}, nil
+	}
+
+	// For process type, create ProcessIdentifier for dynamic port resolution
+	if response.Type == "process" && response.Workdir != "" {
+		mapping.ProcessIdentifier = &ProcessIdentifier{
+			Workdir:        response.Workdir,
+			CommandPattern: response.CommandPattern,
+		}
+	}
+
+	return mapping, nil
 }
 
 func (r *Resolver) getSystemPrompt() string {
@@ -144,8 +166,11 @@ Respond with a JSON object:
   "type": "process" | "docker",
   "target": "localhost" for process, or container name for docker,
   "port": the port number to connect to,
-  "reason": "brief explanation of why this target was chosen"
+  "reason": "brief explanation of why this target was chosen",
+  "workdir": "working directory of the matched process (REQUIRED for type=process, omit for docker)"
 }
+
+IMPORTANT: For type="process", you MUST include the "workdir" field with the full working directory path of the matched process. This is used for dynamic port resolution when the process restarts on a different port.
 
 If no suitable target is found, still provide your best guess with explanation.`
 }
@@ -171,8 +196,11 @@ Respond with a JSON object:
   "type": "process" | "docker",
   "target": "localhost" for process, or container name for docker,
   "port": the port number to connect to,
-  "reason": "brief explanation of why this target was chosen"
+  "reason": "brief explanation of why this target was chosen",
+  "workdir": "working directory of the matched process (REQUIRED for type=process, omit for docker)"
 }
+
+IMPORTANT: For type="process", you MUST include the "workdir" field with the full working directory path of the matched process. This is used for dynamic port resolution when the process restarts on a different port.
 
 If no suitable target is found, still provide your best guess with explanation.`
 }

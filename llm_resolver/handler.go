@@ -469,20 +469,33 @@ func (m *LLMResolver) handleMappingsAPI(w http.ResponseWriter, r *http.Request) 
 
 // buildUpstreamURL creates the upstream URL for the reverse proxy
 func (m *LLMResolver) buildUpstreamURL(mapping *RouteMapping) (string, error) {
-	var host string
-
 	if mapping.Type == "process" {
-		host = "127.0.0.1"
-	} else {
-		// Docker container - get IP
-		ip, err := GetContainerIP(mapping.Target)
-		if err != nil || ip == "" {
-			return "", fmt.Errorf("cannot resolve IP for container %s: %v", mapping.Target, err)
+		port := mapping.Port
+
+		// Try dynamic port resolution if ProcessIdentifier is available
+		if mapping.ProcessIdentifier != nil && m.processCache != nil {
+			resolvedPort, err := ResolveProcessPort(mapping.ProcessIdentifier, m.processCache)
+			if err != nil {
+				m.logger.Warn("dynamic port resolution failed, using cached port",
+					zap.String("workdir", mapping.ProcessIdentifier.Workdir),
+					zap.Int("fallbackPort", mapping.Port),
+					zap.Error(err),
+				)
+			} else {
+				port = resolvedPort
+			}
 		}
-		host = ip
+
+		return fmt.Sprintf("127.0.0.1:%d", port), nil
 	}
 
-	return fmt.Sprintf("%s:%d", host, mapping.Port), nil
+	// Docker container - get IP
+	ip, err := GetContainerIP(mapping.Target)
+	if err != nil || ip == "" {
+		return "", fmt.Errorf("cannot resolve IP for container %s: %v", mapping.Target, err)
+	}
+
+	return fmt.Sprintf("%s:%d", ip, mapping.Port), nil
 }
 
 // extractHostname extracts the hostname from the request, removing the port

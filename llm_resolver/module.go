@@ -44,6 +44,9 @@ type LLMResolver struct {
 	// cache is the mapping cache
 	cache *Cache
 
+	// processCache is short-lived cache for process discovery
+	processCache *ProcessCache
+
 	// resolver handles LLM API calls
 	resolver *Resolver
 
@@ -76,6 +79,9 @@ func (m *LLMResolver) Provision(ctx caddy.Context) error {
 	if err := m.cache.Load(); err != nil {
 		m.logger.Warn("failed to load cache, starting fresh", zap.Error(err))
 	}
+
+	// Initialize process cache for dynamic port resolution
+	m.processCache = NewProcessCache()
 
 	// Initialize resolver
 	m.resolver = NewResolver(m.APIKey, m.APIURL, m.Model, m.ComposeProject, m.logger)
