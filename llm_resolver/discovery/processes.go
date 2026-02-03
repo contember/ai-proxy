@@ -21,11 +21,13 @@ var (
 
 // LocalProcess represents a discovered local process
 type LocalProcess struct {
-	Port    int    `json:"port"`
-	PID     int    `json:"pid"`
-	Command string `json:"command"`
-	Args    string `json:"args"`
-	Workdir string `json:"workdir"`
+	Port      int    `json:"port"`
+	PID       int    `json:"pid"`
+	PPID      int    `json:"-"` // Parent PID, used for internal filtering only
+	BindAddr  string `json:"-"` // Bind address (e.g., "0.0.0.0", "127.0.0.1"), used for deduplication
+	Command   string `json:"command"`
+	Args      string `json:"args"`
+	Workdir   string `json:"workdir"`
 }
 
 // Processes to filter out (system/non-dev)
@@ -80,6 +82,12 @@ var ignoredWorkdirs = map[string]bool{
 	"/root": true,
 }
 
+// Ports to always ignore (debug/inspection ports)
+var ignoredPorts = map[int]bool{
+	9229: true, // Node.js debug port
+	9222: true, // Chrome DevTools Protocol
+}
+
 // Patterns in args that indicate non-dev processes
 var ignoredArgsPatterns = []string{
 	"jetbrains",
@@ -132,10 +140,63 @@ func DiscoverLocalProcesses() ([]LocalProcess, error) {
 		if shouldIgnoreByArgs(p.Args) {
 			continue
 		}
+		// Filter out known debug/inspection ports
+		if ignoredPorts[p.Port] {
+			continue
+		}
 		filtered = append(filtered, p)
 	}
 
-	return filtered, nil
+	// Add PPID to each process for child filtering
+	for i := range filtered {
+		if runtime.GOOS == "darwin" {
+			filtered[i].PPID = getProcessPPIDMac(filtered[i].PID)
+		} else {
+			filtered[i].PPID = getProcessPPID(filtered[i].PID)
+		}
+	}
+
+	// Build set of PIDs
+	pidSet := make(map[int]bool)
+	for _, p := range filtered {
+		pidSet[p.PID] = true
+	}
+
+	// Filter out child processes: keep only processes whose parent is NOT in our list
+	var rootProcesses []LocalProcess
+	for _, p := range filtered {
+		if !pidSet[p.PPID] {
+			rootProcesses = append(rootProcesses, p)
+		}
+	}
+
+	// Deduplicate by PID: keep only one port per process
+	// Prefer 0.0.0.0 (all interfaces) over 127.0.0.1 (localhost), then prefer lower port numbers
+	pidToProcess := make(map[int]LocalProcess)
+	for _, p := range rootProcesses {
+		existing, exists := pidToProcess[p.PID]
+		if !exists {
+			pidToProcess[p.PID] = p
+			continue
+		}
+		// Prefer 0.0.0.0 or * (all interfaces) over localhost bindings
+		existingIsPublic := existing.BindAddr == "0.0.0.0" || existing.BindAddr == "*" || existing.BindAddr == "[::]"
+		newIsPublic := p.BindAddr == "0.0.0.0" || p.BindAddr == "*" || p.BindAddr == "[::]"
+		if newIsPublic && !existingIsPublic {
+			pidToProcess[p.PID] = p
+		} else if existingIsPublic == newIsPublic && p.Port < existing.Port {
+			// Same binding type, prefer lower port
+			pidToProcess[p.PID] = p
+		}
+	}
+
+	// Convert map back to slice
+	var deduplicated []LocalProcess
+	for _, p := range pidToProcess {
+		deduplicated = append(deduplicated, p)
+	}
+
+	return deduplicated, nil
 }
 
 // shouldIgnoreByArgs checks if process args contain ignored patterns
@@ -204,16 +265,23 @@ func discoverWithLsof() ([]LocalProcess, error) {
 		}
 		seenPorts[port] = true
 
+		// Extract bind address (everything before the last colon)
+		bindAddr := ""
+		if lastColon := strings.LastIndex(name, ":"); lastColon > 0 {
+			bindAddr = name[:lastColon]
+		}
+
 		// Get full command args and workdir using ps and lsof
 		args := cleanArgs(getProcessArgsMac(pid))
 		workdir := getProcessWorkdirMac(pid)
 
 		processes = append(processes, LocalProcess{
-			Port:    port,
-			PID:     pid,
-			Command: command,
-			Args:    args,
-			Workdir: workdir,
+			Port:     port,
+			PID:      pid,
+			BindAddr: bindAddr,
+			Command:  command,
+			Args:     args,
+			Workdir:  workdir,
 		})
 	}
 
@@ -285,7 +353,7 @@ func tryWithSs() ([]LocalProcess, error) {
 		localAddr := parts[3]
 		processInfo := strings.Join(parts[5:], " ")
 
-		// Extract port from local address
+		// Extract port from local address (format: "0.0.0.0:5174" or "127.0.0.1:34549" or "*:3000")
 		portMatch := portExtractRegex.FindStringSubmatch(localAddr)
 		if len(portMatch) < 2 {
 			continue
@@ -293,6 +361,12 @@ func tryWithSs() ([]LocalProcess, error) {
 		port, _ := strconv.Atoi(portMatch[1])
 		if port < 1024 {
 			continue
+		}
+
+		// Extract bind address (everything before the last colon)
+		bindAddr := ""
+		if lastColon := strings.LastIndex(localAddr, ":"); lastColon > 0 {
+			bindAddr = localAddr[:lastColon]
 		}
 
 		// Extract PID from process info
@@ -309,11 +383,12 @@ func tryWithSs() ([]LocalProcess, error) {
 		workdir := getProcessWorkdir(pid)
 
 		processes = append(processes, LocalProcess{
-			Port:    port,
-			PID:     pid,
-			Command: command,
-			Args:    args,
-			Workdir: workdir,
+			Port:     port,
+			PID:      pid,
+			BindAddr: bindAddr,
+			Command:  command,
+			Args:     args,
+			Workdir:  workdir,
 		})
 	}
 
@@ -367,13 +442,20 @@ func parseTcpFile(tcpFile string, seenPorts map[int]bool, inodeToPid map[string]
 			continue
 		}
 
-		// Extract port (hex)
+		// Extract port (hex) and address
 		addrParts := strings.Split(localAddr, ":")
 		if len(addrParts) < 2 {
 			continue
 		}
 		port64, _ := strconv.ParseInt(addrParts[1], 16, 32)
 		port := int(port64)
+
+		// Parse hex IP address to determine bind type
+		hexAddr := addrParts[0]
+		bindAddr := "127.0.0.1" // default
+		if hexAddr == "00000000" || hexAddr == "00000000000000000000000000000000" {
+			bindAddr = "0.0.0.0"
+		}
 
 		if port < 1024 || seenPorts[port] {
 			continue
@@ -391,11 +473,12 @@ func parseTcpFile(tcpFile string, seenPorts map[int]bool, inodeToPid map[string]
 		workdir := getProcessWorkdir(pid)
 
 		processes = append(processes, LocalProcess{
-			Port:    port,
-			PID:     pid,
-			Command: command,
-			Args:    args,
-			Workdir: workdir,
+			Port:     port,
+			PID:      pid,
+			BindAddr: bindAddr,
+			Command:  command,
+			Args:     args,
+			Workdir:  workdir,
 		})
 	}
 
@@ -473,6 +556,35 @@ func getProcessWorkdir(pid int) string {
 		return ""
 	}
 	return link
+}
+
+// getProcessPPID gets the parent PID for a process (Linux)
+func getProcessPPID(pid int) int {
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "status"))
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "PPid:") {
+			ppid, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "PPid:")))
+			return ppid
+		}
+	}
+	return 0
+}
+
+// getProcessPPIDMac gets the parent PID for a process (macOS)
+func getProcessPPIDMac(pid int) int {
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "ppid=")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	ppid, _ := strconv.Atoi(strings.TrimSpace(string(output)))
+	return ppid
 }
 
 // cleanArgs cleans up command line args for better readability
