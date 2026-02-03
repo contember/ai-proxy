@@ -46,13 +46,20 @@ jobs:
         run: |
           xcaddy build \
             --with github.com/contember/ai-proxy/llm_resolver=${{ github.workspace }}/llm_resolver \
-            --output caddy-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}
+            --output caddy
+
+      - name: Create tarball
+        run: |
+          tar czf caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz caddy
+          shasum -a 256 caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz > caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: caddy-${{ matrix.os }}-${{ matrix.arch }}
-          path: caddy-${{ matrix.os }}-${{ matrix.arch }}*
+          path: |
+            caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+            caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
 
   docker:
     name: Build Docker image
@@ -81,6 +88,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -90,14 +100,40 @@ jobs:
         run: |
           mkdir -p release
           for dir in artifacts/caddy-*; do
-            name=$(basename "$dir")
-            cp "$dir"/* "release/"
-            chmod +x "release/$name" 2>/dev/null || true
+            cp "$dir"/*.tar.gz "release/" 2>/dev/null || true
+            cp "$dir"/*.sha256 "release/" 2>/dev/null || true
           done
           ls -la release/
+
+      - name: Update Homebrew formula
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+
+          # Read SHA256 values
+          SHA_DARWIN_ARM64=$(cat release/caddy-darwin-arm64.tar.gz.sha256 | awk '{print $1}')
+          SHA_DARWIN_AMD64=$(cat release/caddy-darwin-amd64.tar.gz.sha256 | awk '{print $1}')
+          SHA_LINUX_ARM64=$(cat release/caddy-linux-arm64.tar.gz.sha256 | awk '{print $1}')
+          SHA_LINUX_AMD64=$(cat release/caddy-linux-amd64.tar.gz.sha256 | awk '{print $1}')
+
+          # Update formula
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Formula/caddy-llm-proxy.rb
+          sed -i "s/SHA256_DARWIN_ARM64/${SHA_DARWIN_ARM64}/" Formula/caddy-llm-proxy.rb
+          sed -i "s/SHA256_DARWIN_AMD64/${SHA_DARWIN_AMD64}/" Formula/caddy-llm-proxy.rb
+          sed -i "s/SHA256_LINUX_ARM64/${SHA_LINUX_ARM64}/" Formula/caddy-llm-proxy.rb
+          sed -i "s/SHA256_LINUX_AMD64/${SHA_LINUX_AMD64}/" Formula/caddy-llm-proxy.rb
+
+          cat Formula/caddy-llm-proxy.rb
+
+      - name: Commit formula update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/caddy-llm-proxy.rb
+          git commit -m "chore: update homebrew formula for ${GITHUB_REF#refs/tags/}"
+          git push origin HEAD:main
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release/*
+          files: release/*.tar.gz
           generate_release_notes: true
