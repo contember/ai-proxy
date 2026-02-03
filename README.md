@@ -15,76 +15,89 @@ A Caddy module that provides LLM-based dynamic routing for local development. It
 - **Second-level proxy** for inter-service communication (`/_proxy/serviceName/path`)
 - **REST API** for managing mappings (`/_api/mappings/`)
 
-## Quick Start
+## Installation
 
-### macOS (Homebrew)
+### macOS
+
+Use Homebrew (recommended):
 
 ```bash
-# Add tap and install
 brew tap contember/ai-proxy https://github.com/contember/ai-proxy
 brew install caddy-llm-proxy
+```
 
-# Run manually
+Then run:
+
+```bash
 export LLM_API_KEY=your-key
-sudo caddy-llm-proxy run --config /path/to/Caddyfile
+sudo caddy-llm-proxy run --config Caddyfile
+```
 
-# Or as a background service
+Or start as a background service:
+
+```bash
 brew services start caddy-llm-proxy
 ```
 
-### macOS/Linux (Install Script)
+> **Note:** On macOS, Docker cannot discover local processes outside the container. Native installation is required for full process discovery.
+
+### Linux
+
+Use Docker Compose (recommended):
+
+```bash
+export LLM_API_KEY=your-key
+docker compose up -d
+```
+
+Then test with:
+
+```bash
+curl -k https://myapp.localhost
+```
+
+## Alternative Installation
+
+<details>
+<summary>Install script (macOS/Linux)</summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/contember/ai-proxy/main/install.sh | bash
 ```
 
-The script automatically handles macOS security (Gatekeeper) by removing quarantine and signing the binary.
+Handles macOS Gatekeeper automatically.
+</details>
 
-### Pre-built Binaries
+<details>
+<summary>Manual download</summary>
 
-Download pre-built binaries from [Releases](../../releases):
+Download from [Releases](../../releases), then:
 
 ```bash
-# Download, extract and run
 tar xzf caddy-darwin-arm64.tar.gz
 sudo LLM_API_KEY=your-key ./caddy run --config Caddyfile
 ```
+</details>
 
-### Using Docker Compose
-
-```bash
-# Set your API key
-export LLM_API_KEY=your-key-here
-
-# Optionally use a local LLM
-export LLM_API_URL=http://localhost:11434/v1/chat/completions  # Ollama
-export MODEL=llama3.2
-
-# Build and run
-docker compose up -d
-
-# Test
-curl -k https://myapp.localhost
-```
-
-### Building Manually
+<details>
+<summary>Build from source</summary>
 
 ```bash
-# Install xcaddy
 go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-
-# Build Caddy with the plugin
 xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
-
-# Run
 LLM_API_KEY=your-key ./caddy run --config Caddyfile
 ```
+</details>
 
-### Running on macOS
+<details>
+<summary>Using a local LLM (Ollama, etc.)</summary>
 
-On macOS, running inside Docker limits process discovery (can only see processes inside the container). For full local process visibility, run natively using Homebrew or the install script above.
-
-The proxy uses `lsof` on macOS to discover listening processes, which works without any special privileges when running natively. Requires `sudo` for binding to ports 80/443.
+```bash
+export LLM_API_KEY=your-key
+export LLM_API_URL=http://localhost:11434/v1/chat/completions
+export MODEL=llama3.2
+```
+</details>
 
 ## Configuration
 
