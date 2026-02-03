@@ -17,19 +17,37 @@ A Caddy module that provides LLM-based dynamic routing for local development. It
 
 ## Quick Start
 
+### macOS (Homebrew)
+
+```bash
+# Add tap and install
+brew tap contember/ai-proxy https://github.com/contember/ai-proxy
+brew install caddy-llm-proxy
+
+# Run manually
+export LLM_API_KEY=your-key
+sudo caddy-llm-proxy run --config /path/to/Caddyfile
+
+# Or as a background service
+brew services start caddy-llm-proxy
+```
+
+### macOS/Linux (Install Script)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/contember/ai-proxy/main/install.sh | bash
+```
+
+The script automatically handles macOS security (Gatekeeper) by removing quarantine and signing the binary.
+
 ### Pre-built Binaries
 
 Download pre-built binaries from [Releases](../../releases):
 
-- `caddy-linux-amd64` - Linux x86_64
-- `caddy-linux-arm64` - Linux ARM64
-- `caddy-darwin-amd64` - macOS Intel
-- `caddy-darwin-arm64` - macOS Apple Silicon
-
 ```bash
-# Download and run (example for macOS ARM64)
-chmod +x caddy-darwin-arm64
-sudo LLM_API_KEY=your-key ./caddy-darwin-arm64 run --config Caddyfile
+# Download, extract and run
+tar xzf caddy-darwin-arm64.tar.gz
+sudo LLM_API_KEY=your-key ./caddy run --config Caddyfile
 ```
 
 ### Using Docker Compose
@@ -64,17 +82,9 @@ LLM_API_KEY=your-key ./caddy run --config Caddyfile
 
 ### Running on macOS
 
-On macOS, running inside Docker limits process discovery (can only see processes inside the container). For full local process visibility, run natively:
+On macOS, running inside Docker limits process discovery (can only see processes inside the container). For full local process visibility, run natively using Homebrew or the install script above.
 
-```bash
-# Build
-xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
-
-# Run (requires sudo for ports 80/443)
-sudo LLM_API_KEY=your-key ./caddy run --config Caddyfile
-```
-
-The proxy uses `lsof` on macOS to discover listening processes, which works without any special privileges when running natively.
+The proxy uses `lsof` on macOS to discover listening processes, which works without any special privileges when running natively. Requires `sudo` for binding to ports 80/443.
 
 ## Configuration
 
