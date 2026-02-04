@@ -24,19 +24,12 @@ Use Homebrew (recommended):
 ```bash
 brew tap contember/ai-proxy https://github.com/contember/ai-proxy
 brew install caddy-llm-proxy
-```
 
-Then run:
+# Add your API key
+echo "LLM_API_KEY=sk-your-key" >> /opt/homebrew/etc/caddy-llm-proxy/env
 
-```bash
-export LLM_API_KEY=your-key
-sudo caddy-llm-proxy run --config Caddyfile
-```
-
-Or start as a background service:
-
-```bash
-brew services start caddy-llm-proxy
+# Start the service
+sudo brew services start caddy-llm-proxy
 ```
 
 > **Note:** On macOS, Docker cannot discover local processes outside the container. Native installation is required for full process discovery.

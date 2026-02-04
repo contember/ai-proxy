@@ -3,7 +3,8 @@ set -e
 
 REPO="contember/ai-proxy"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-BINARY_NAME="caddy-llm-proxy"
+CONFIG_DIR="${CONFIG_DIR:-/usr/local/etc/caddy-llm-proxy}"
+DATA_DIR="${DATA_DIR:-/var/lib/caddy-llm-proxy}"
 
 # Detect OS and architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -41,23 +42,43 @@ echo "Downloading from ${DOWNLOAD_URL}..."
 curl -sL "$DOWNLOAD_URL" | tar xz -C "$TMP_DIR"
 
 # Install binary
-if [ -w "$INSTALL_DIR" ]; then
-  mv "$TMP_DIR/caddy" "$INSTALL_DIR/$BINARY_NAME"
-else
+SUDO=""
+if [ ! -w "$INSTALL_DIR" ]; then
+  SUDO="sudo"
   echo "Installing to $INSTALL_DIR (requires sudo)..."
-  sudo mv "$TMP_DIR/caddy" "$INSTALL_DIR/$BINARY_NAME"
 fi
 
-chmod +x "$INSTALL_DIR/$BINARY_NAME"
+$SUDO mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
+$SUDO mv "$TMP_DIR/caddy" "$INSTALL_DIR/caddy-llm-proxy"
+$SUDO chmod +x "$INSTALL_DIR/caddy-llm-proxy"
+
+# Install Caddyfile if not exists
+if [ ! -f "$CONFIG_DIR/Caddyfile" ] && [ -f "$TMP_DIR/Caddyfile" ]; then
+  $SUDO mv "$TMP_DIR/Caddyfile" "$CONFIG_DIR/Caddyfile"
+fi
+
+# Create env file template if not exists
+if [ ! -f "$CONFIG_DIR/env" ]; then
+  $SUDO tee "$CONFIG_DIR/env" > /dev/null << EOF
+# Add your API key here:
+# LLM_API_KEY=sk-your-key-here
+
+CADDY_DATA_DIR=$DATA_DIR
+EOF
+fi
 
 # macOS: remove quarantine and sign
 if [ "$OS" = "darwin" ]; then
-  xattr -d com.apple.quarantine "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
-  codesign --force --deep --sign - "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
+  xattr -d com.apple.quarantine "$INSTALL_DIR/caddy-llm-proxy" 2>/dev/null || true
+  codesign --force --deep --sign - "$INSTALL_DIR/caddy-llm-proxy" 2>/dev/null || true
 fi
 
-echo "Installed $BINARY_NAME to $INSTALL_DIR/$BINARY_NAME"
-echo ""
-echo "To run:"
-echo "  export LLM_API_KEY='your-api-key'"
-echo "  $BINARY_NAME run --config /path/to/Caddyfile"
+cat << EOF
+
+Installed to $INSTALL_DIR/caddy-llm-proxy
+Config: $CONFIG_DIR/Caddyfile
+
+Add your API key and start:
+  echo 'LLM_API_KEY=sk-your-key' >> $CONFIG_DIR/env
+  sudo bash -c 'set -a; source $CONFIG_DIR/env; caddy-llm-proxy run --config $CONFIG_DIR/Caddyfile'
+EOF

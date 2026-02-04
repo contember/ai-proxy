@@ -27,25 +27,54 @@ class CaddyLlmProxy < Formula
   end
 
   def install
-    bin.install "caddy" => "caddy-llm-proxy"
+    bin.install "caddy" => "caddy-llm-proxy-bin"
+    (etc/"caddy-llm-proxy").mkpath
+    (etc/"caddy-llm-proxy").install "Caddyfile" unless (etc/"caddy-llm-proxy/Caddyfile").exist?
+
+    # Create wrapper script that loads env file
+    (bin/"caddy-llm-proxy").write <<~EOS
+      #!/bin/bash
+      set -a
+      [ -f "#{etc}/caddy-llm-proxy/env" ] && source "#{etc}/caddy-llm-proxy/env"
+      set +a
+      export CADDY_DATA_DIR="${CADDY_DATA_DIR:-#{var}/lib/caddy-llm-proxy}"
+      exec "#{opt_bin}/caddy-llm-proxy-bin" "$@"
+    EOS
+    (bin/"caddy-llm-proxy").chmod 0755
   end
 
   service do
-    run [opt_bin/"caddy-llm-proxy", "run", "--config", etc/"Caddyfile"]
+    run [opt_bin/"caddy-llm-proxy", "run", "--config", etc/"caddy-llm-proxy/Caddyfile"]
     keep_alive true
     log_path var/"log/caddy-llm-proxy.log"
     error_log_path var/"log/caddy-llm-proxy.error.log"
   end
 
+  def post_install
+    (var/"lib/caddy-llm-proxy").mkpath
+    # Create example env file if it doesn't exist
+    env_file = etc/"caddy-llm-proxy/env"
+    unless env_file.exist?
+      env_file.write <<~EOS
+        # Add your API key here:
+        # LLM_API_KEY=sk-your-key-here
+        #
+        # Optional settings:
+        # LLM_API_URL=https://openrouter.ai/api/v1/chat/completions
+        # MODEL=anthropic/claude-haiku-4.5
+      EOS
+    end
+  end
+
   def caveats
     <<~EOS
-      To use the LLM proxy, set the following environment variables:
-        export LLM_API_KEY="your-api-key"
+      Add your API key to #{etc}/caddy-llm-proxy/env:
+        echo "LLM_API_KEY=sk-your-key" >> #{etc}/caddy-llm-proxy/env
 
-      Create a Caddyfile at #{etc}/Caddyfile with your configuration.
+      Start the service:
+        sudo brew services start caddy-llm-proxy
 
-      To start the service:
-        brew services start caddy-llm-proxy
+      Logs: #{var}/log/caddy-llm-proxy.log
     EOS
   end
 
