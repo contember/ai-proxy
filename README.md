@@ -1,6 +1,8 @@
 # Caddy LLM Proxy
 
-A Caddy module that provides LLM-based dynamic routing for local development. It automatically discovers local processes and Docker containers, then uses an LLM to intelligently route requests based on hostname patterns. Supports any OpenAI-compatible API (OpenRouter, Ollama, LM Studio, vLLM, etc.).
+A local development proxy that uses AI to automatically route `*.localhost` domains to your running services. No config files, no port numbers to remember -- just visit `myapp.localhost` and the proxy figures out the rest.
+
+Supports any OpenAI-compatible API (OpenRouter, Ollama, LM Studio, vLLM, etc.).
 
 ## Features
 
@@ -11,32 +13,29 @@ A Caddy module that provides LLM-based dynamic routing for local development. It
 - **Cross-platform**: Works on Linux and macOS
 - **On-demand TLS certificates** for `*.localhost` domains
 - **Persistent mapping cache** (JSON file)
-- **Debug dashboard** at `proxy.localhost` or `/_debug`
-- **Second-level proxy** for inter-service communication (`/_proxy/serviceName/path`)
+- **Debug dashboard** at `proxy.localhost`
+- **Inter-service proxy** for service-to-service communication (`/_proxy/serviceName/path`)
 - **REST API** for managing mappings (`/_api/mappings/`)
+- **CLI** with `setup`, `status`, `start`, `stop`, `restart`, `trust` commands
+- **macOS menu bar app** for quick access
 
 ## Installation
 
-### macOS
-
-Use Homebrew (recommended):
+### macOS (Homebrew)
 
 ```bash
 brew tap contember/ai-proxy https://github.com/contember/ai-proxy
 brew install caddy-llm-proxy
-
-# Add your API key
-echo "LLM_API_KEY=sk-your-key" >> /opt/homebrew/etc/caddy-llm-proxy/env
-
-# Start the service
-sudo brew services start caddy-llm-proxy
+caddy-llm-proxy setup
 ```
+
+The `setup` command walks you through configuring your API key, trusting the HTTPS certificate, and starting the proxy.
+
+You'll need an [OpenRouter](https://openrouter.ai/) API key (or any OpenAI-compatible API).
 
 > **Note:** On macOS, Docker cannot discover local processes outside the container. Native installation is required for full process discovery.
 
-### Linux
-
-Use Docker Compose (recommended):
+### Linux (Docker)
 
 ```bash
 export LLM_API_KEY=your-key
@@ -49,7 +48,7 @@ Then test with:
 curl -k https://myapp.localhost
 ```
 
-## Alternative Installation
+### Alternative Installation
 
 <details>
 <summary>Install script (macOS/Linux)</summary>
@@ -92,16 +91,109 @@ export MODEL=llama3.2
 ```
 </details>
 
+## Usage
+
+Start a dev server on any port:
+
+```bash
+cd ~/projects/myapp
+npm run dev  # listening on port 5173
+```
+
+Then open `https://myapp.localhost` in your browser. The proxy matches the hostname to your running process based on the project directory name, command, and port.
+
+### Examples
+
+| Hostname | Matches |
+|---|---|
+| `myapp.localhost` | Process running in `~/projects/myapp` |
+| `api.myproject.localhost` | Backend service in `myproject` directory |
+| `postgres-app.localhost` | Docker container named `postgres-app` |
+
+### Query Parameters
+
+| Parameter | Description |
+|---|---|
+| `?force` | Force re-resolution (bypass cache) |
+| `?prompt=text` | Provide additional context to the LLM |
+
+### Inter-Service Proxy
+
+For frontend apps that need to reach a related backend:
+
+```
+https://myapp.localhost/_proxy/api/endpoint
+```
+
+This resolves `api` as a related service to `myapp` (e.g., a backend in the same project directory) and proxies the request.
+
+### Dashboard
+
+Visit `https://proxy.localhost` to see all current route mappings, discovered processes, and Docker containers. You can delete stale mappings from here.
+
+### Mappings API
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/_api/mappings/` | GET | List all mappings |
+| `/_api/mappings/{hostname}` | GET | Get a specific mapping |
+| `/_api/mappings/{hostname}` | PUT | Set a manual mapping |
+| `/_api/mappings/{hostname}` | DELETE | Delete a mapping |
+
+```bash
+# Set a manual mapping
+curl -X PUT https://any.localhost/_api/mappings/myapp.localhost \
+  -d '{"type":"process","target":"localhost","port":3000}'
+
+# Delete a mapping
+curl -X DELETE https://any.localhost/_api/mappings/myapp.localhost
+```
+
+## CLI
+
+The `caddy-llm-proxy` command handles proxy management and delegates all other commands to the underlying Caddy binary.
+
+```
+caddy-llm-proxy setup       # Interactive first-time setup
+caddy-llm-proxy status      # Show proxy status
+caddy-llm-proxy start       # Start the proxy
+caddy-llm-proxy stop        # Stop the proxy
+caddy-llm-proxy restart     # Restart the proxy
+caddy-llm-proxy trust       # Trust the HTTPS certificate
+```
+
+All other commands (`run`, `version`, `list-modules`, etc.) are passed through to Caddy:
+
+```bash
+caddy-llm-proxy version     # Shows Caddy version
+caddy-llm-proxy run         # Runs Caddy in foreground (env file sourced automatically)
+```
+
+## macOS Menu Bar App
+
+On macOS, a menu bar app is installed alongside the proxy. It shows proxy status, lets you start/stop the service, configure your API key, and trust the certificate from the menu bar.
+
+The app is installed at `$(brew --prefix)/opt/caddy-llm-proxy/Caddy LLM Proxy.app`. Add it to System Settings > General > Login Items to start automatically.
+
 ## Configuration
 
 ### Environment Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_API_KEY` | (required) | API key for the LLM API |
-| `LLM_API_URL` | `https://openrouter.ai/api/v1/chat/completions` | LLM API endpoint (OpenAI-compatible) |
-| `MODEL` | `anthropic/claude-haiku-4.5` | LLM model to use |
-| `COMPOSE_PROJECT` | - | Own compose project name to filter out |
+|---|---|---|
+| `LLM_API_KEY` | *(required)* | API key for the LLM provider |
+| `LLM_API_URL` | `https://openrouter.ai/api/v1/chat/completions` | OpenAI-compatible chat completions endpoint |
+| `MODEL` | `anthropic/claude-haiku-4.5` | Model to use for routing decisions |
+| `COMPOSE_PROJECT` | | Own Docker Compose project name (filtered from discovery) |
+
+### Config Files
+
+Homebrew installations store config in `$(brew --prefix)/etc/caddy-llm-proxy/`:
+
+| File | Purpose |
+|---|---|
+| `env` | Environment variables (`LLM_API_KEY`, etc.) |
+| `Caddyfile` | Caddy configuration |
 
 ### Caddyfile Directives
 
@@ -115,22 +207,19 @@ llm_resolver {
 }
 ```
 
-## Endpoints
+### Service Management
 
-| Endpoint | Description |
-|----------|-------------|
-| `/_tls_check` | TLS verification for on-demand certificates |
-| `/_debug` | Debug dashboard (HTML or JSON based on Accept header) |
-| `/_api/mappings/` | GET: list all mappings |
-| `/_api/mappings/{hostname}` | GET/PUT/DELETE: manage specific mapping |
-| `/_proxy/{service}/{path}` | Second-level proxy for inter-service communication |
+```bash
+# Via brew services (recommended)
+sudo brew services start caddy-llm-proxy
+sudo brew services stop caddy-llm-proxy
 
-## Query Parameters
+# Or via the CLI
+caddy-llm-proxy start
+caddy-llm-proxy stop
+```
 
-| Parameter | Description |
-|-----------|-------------|
-| `?force` | Force re-resolution (bypass cache) |
-| `?prompt=text` | Provide additional context to the LLM |
+Logs: `~/Library/Logs/Homebrew/caddy-llm-proxy.log` (macOS)
 
 ## How It Works
 
@@ -150,11 +239,36 @@ llm_resolver {
 # Run with hot reload (requires xcaddy)
 xcaddy run --config Caddyfile
 
-# Build Docker image
-docker build -t llm-proxy .
+# Build the Caddy binary with the plugin
+xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
+
+# Build the CLI
+cd cmd/cli && go build -o caddy-llm-proxy .
+
+# Build the menubar app (macOS only)
+cd cmd/menubar && go build -o menubar .
 
 # Run tests
 go test ./...
+
+# Build Docker image
+docker build -t llm-proxy .
+```
+
+### Project Structure
+
+```
+llm_resolver/            # Caddy module (Go package)
+  module.go              # Caddy module registration
+  handler.go             # HTTP middleware, dashboard, API
+  resolver.go            # LLM resolution logic
+  cache.go               # Persistent mapping storage
+  discovery/             # Service discovery
+    docker.go            # Docker container discovery
+    processes.go         # Local process discovery
+cmd/cli/                 # CLI binary (caddy-llm-proxy command)
+cmd/menubar/             # macOS menu bar app
+Formula/                 # Homebrew formula
 ```
 
 ## License
