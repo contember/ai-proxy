@@ -353,34 +353,36 @@ func TrustCertificate(config *Config) error {
 		"/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
 	}
 
-	var certPath string
-	for _, p := range certPaths {
-		if _, err := os.Stat(p); err == nil {
-			certPath = p
-			break
-		}
-	}
-
-	if certPath == "" {
-		return fmt.Errorf("certificate not found - start the proxy first and make an HTTPS request")
-	}
-
 	loginKeychain := filepath.Join(home, "Library", "Keychains", "login.keychain-db")
 	tempCert := filepath.Join(os.TempDir(), "caddy-root-ca.crt")
 
-	// Copy the certificate (may need admin if owned by root)
-	if err := copyFile(certPath, tempCert); err != nil {
-		// Try with admin privileges
+	// Try to copy certificate from each path (may need admin privileges for root-owned files)
+	var copyErr error
+	for _, certPath := range certPaths {
+		// First try without admin privileges
+		if err := copyFile(certPath, tempCert); err == nil {
+			copyErr = nil
+			break
+		}
+
+		// Try with admin privileges (handles permission denied on root-owned directories)
 		copyScript := fmt.Sprintf(
-			`do shell script "cp '%s' '%s' && chmod 644 '%s'" with administrator privileges`,
+			`do shell script "test -f '%s' && cp '%s' '%s' && chmod 644 '%s'" with administrator privileges`,
+			escapeAppleScript(certPath),
 			escapeAppleScript(certPath),
 			escapeAppleScript(tempCert),
 			escapeAppleScript(tempCert),
 		)
 		cmd := exec.Command("osascript", "-e", copyScript)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("cannot access certificate: %s", strings.TrimSpace(string(output)))
+		if _, err := cmd.CombinedOutput(); err == nil {
+			copyErr = nil
+			break
 		}
+		copyErr = fmt.Errorf("certificate not found at %s", certPath)
+	}
+
+	if copyErr != nil {
+		return fmt.Errorf("certificate not found - start the proxy first and make an HTTPS request")
 	}
 
 	// Import to login keychain (ignore error if already exists)
