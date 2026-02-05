@@ -1,4 +1,9 @@
 {
+	# Storage location for certificates and other data
+	storage file_system {
+		root {$CADDY_DATA_DIR:/var/lib/caddy}
+	}
+
 	# Use local CA for development certificates
 	local_certs
 	skip_install_trust
