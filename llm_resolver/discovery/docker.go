@@ -15,16 +15,24 @@ const commandTimeout = 10 * time.Second
 // Pre-compiled regex for port extraction
 var portRegex = regexp.MustCompile(`^(\d+)`)
 
+// PortMapping represents a port mapping from container to host
+type PortMapping struct {
+	ContainerPort int    `json:"container_port"`
+	HostPort      int    `json:"host_port"`
+	HostIP        string `json:"host_ip"`
+}
+
 // DockerContainer represents a discovered Docker container
 type DockerContainer struct {
-	ID      string            `json:"id"`
-	Name    string            `json:"name"`
-	Image   string            `json:"image"`
-	Ports   []int             `json:"ports"`
-	IP      string            `json:"ip"`
-	Network string            `json:"network"`
-	Workdir string            `json:"workdir"`
-	Labels  map[string]string `json:"labels"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Image        string            `json:"image"`
+	Ports        []int             `json:"ports"`
+	PortMappings []PortMapping     `json:"port_mappings"`
+	IP           string            `json:"ip"`
+	Network      string            `json:"network"`
+	Workdir      string            `json:"workdir"`
+	Labels       map[string]string `json:"labels"`
 }
 
 // dockerPsOutput represents the JSON output from docker ps
@@ -43,6 +51,10 @@ type dockerInspectOutput struct {
 		Networks map[string]struct {
 			IPAddress string `json:"IPAddress"`
 		} `json:"Networks"`
+		Ports map[string][]struct {
+			HostIP   string `json:"HostIp"`
+			HostPort string `json:"HostPort"`
+		} `json:"Ports"`
 	} `json:"NetworkSettings"`
 	Config struct {
 		Image        string            `json:"Image"`
@@ -144,6 +156,38 @@ func getContainerDetails(containerID string) (*DockerContainer, error) {
 		}
 	}
 
+	// Extract port mappings (published ports)
+	var portMappings []PortMapping
+	for portSpec, bindings := range data.NetworkSettings.Ports {
+		if len(bindings) == 0 {
+			continue
+		}
+		// Extract container port from spec like "8080/tcp"
+		if match := portRegex.FindStringSubmatch(portSpec); len(match) > 1 {
+			containerPort, err := parsePort(match[1])
+			if err != nil {
+				continue
+			}
+			for _, binding := range bindings {
+				if binding.HostPort != "" {
+					hostPort, err := parsePort(binding.HostPort)
+					if err != nil {
+						continue
+					}
+					hostIP := binding.HostIP
+					if hostIP == "" || hostIP == "0.0.0.0" {
+						hostIP = "127.0.0.1"
+					}
+					portMappings = append(portMappings, PortMapping{
+						ContainerPort: containerPort,
+						HostPort:      hostPort,
+						HostIP:        hostIP,
+					})
+				}
+			}
+		}
+	}
+
 	// Get workdir - prefer docker-compose working_dir label, then container's WorkingDir
 	workdir := data.Config.Labels["com.docker.compose.project.working_dir"]
 	if workdir == "" {
@@ -154,12 +198,13 @@ func getContainerDetails(containerID string) (*DockerContainer, error) {
 	name := strings.TrimPrefix(data.Name, "/")
 
 	return &DockerContainer{
-		ID:      containerID,
-		Name:    name,
-		Image:   data.Config.Image,
-		Ports:   ports,
-		IP:      ip,
-		Network: network,
+		ID:           containerID,
+		Name:         name,
+		Image:        data.Config.Image,
+		Ports:        ports,
+		PortMappings: portMappings,
+		IP:           ip,
+		Network:      network,
 		Workdir: workdir,
 		Labels:  data.Config.Labels,
 	}, nil
@@ -176,6 +221,26 @@ func GetContainerIP(containerIDOrName string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// GetContainerHostAddress returns the host-accessible address for a container port.
+// On macOS/Windows, Docker container IPs are not accessible from the host, so we
+// need to use published ports. Returns (hostIP, hostPort, found).
+func GetContainerHostAddress(containerIDOrName string, containerPort int) (string, int, bool) {
+	details, err := getContainerDetails(containerIDOrName)
+	if err != nil || details == nil {
+		return "", 0, false
+	}
+
+	// Look for a port mapping for the requested container port
+	for _, pm := range details.PortMappings {
+		if pm.ContainerPort == containerPort {
+			return pm.HostIP, pm.HostPort, true
+		}
+	}
+
+	// No published port found
+	return "", 0, false
 }
 
 // parsePort parses and validates a port string, returning error for invalid input

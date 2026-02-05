@@ -22,3 +22,8 @@ func DiscoverDockerContainers(ownComposeProject string) ([]DockerContainer, erro
 func GetContainerIP(containerIDOrName string) (string, error) {
 	return discovery.GetContainerIP(containerIDOrName)
 }
+
+// GetContainerHostAddress returns the host-accessible address for a container port
+func GetContainerHostAddress(containerIDOrName string, containerPort int) (string, int, bool) {
+	return discovery.GetContainerHostAddress(containerIDOrName, containerPort)
+}

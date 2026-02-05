@@ -489,7 +489,12 @@ func (m *LLMResolver) buildUpstreamURL(mapping *RouteMapping) (string, error) {
 		return fmt.Sprintf("127.0.0.1:%d", port), nil
 	}
 
-	// Docker container - get IP
+	// Docker container - try published port first (required for macOS/Windows)
+	if hostIP, hostPort, found := GetContainerHostAddress(mapping.Target, mapping.Port); found {
+		return fmt.Sprintf("%s:%d", hostIP, hostPort), nil
+	}
+
+	// Fall back to container IP (works when proxy runs inside Docker on same network)
 	ip, err := GetContainerIP(mapping.Target)
 	if err != nil || ip == "" {
 		return "", fmt.Errorf("cannot resolve IP for container %s: %v", mapping.Target, err)
