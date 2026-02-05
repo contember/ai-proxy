@@ -147,8 +147,8 @@ llm_resolver {
 ## Development
 
 ```bash
-# Run with hot reload
-go run . run --config Caddyfile
+# Run with hot reload (requires xcaddy)
+xcaddy run --config Caddyfile
 
 # Build Docker image
 docker build -t llm-proxy .
