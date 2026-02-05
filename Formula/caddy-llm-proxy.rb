@@ -1,7 +1,7 @@
 class CaddyLlmProxy < Formula
   desc "Caddy with LLM-based dynamic routing plugin"
   homepage "https://github.com/contember/ai-proxy"
-  version "0.1.1"
+  version "0.2.0"
   license "MIT"
 
   on_macos do
