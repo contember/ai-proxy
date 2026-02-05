@@ -132,23 +132,57 @@ func isBrewServiceAvailable() bool {
 
 // startViaBrew starts the proxy using brew services
 func startViaBrew() error {
+	// First, clean up any broken service state
+	cleanupBrewService()
+
 	// Try without sudo first (works if already authenticated or user has permissions)
 	cmd := exec.Command("brew", "services", "start", brewServiceName)
 	if err := cmd.Run(); err == nil {
-		return nil
+		return waitForStart()
 	}
 
 	// Need sudo - use osascript for GUI prompt
+	// First cleanup any broken system state, then start
+	// Redirect stderr to suppress brew warnings
 	script := fmt.Sprintf(
-		`do shell script "brew services start %s" with administrator privileges`,
-		brewServiceName,
+		`do shell script "launchctl bootout system/homebrew.mxcl.%s 2>/dev/null; rm -f /Library/LaunchDaemons/homebrew.mxcl.%s.plist 2>/dev/null; brew services start %s 2>/dev/null; exit 0" with administrator privileges`,
+		brewServiceName, brewServiceName, brewServiceName,
 	)
 	cmd = exec.Command("osascript", "-e", script)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to start service: %s", strings.TrimSpace(string(output)))
+	if err := cmd.Run(); err != nil {
+		// Check if it actually started despite the error
+		if err := waitForStart(); err == nil {
+			return nil
+		}
+		return fmt.Errorf("failed to start service (try: sudo brew services start %s)", brewServiceName)
 	}
-	return nil
+	return waitForStart()
+}
+
+// cleanupBrewService removes any broken service state
+func cleanupBrewService() {
+	// Unload from launchctl if stuck
+	uid := os.Getuid()
+	exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/homebrew.mxcl.%s", uid, brewServiceName)).Run()
+
+	// Remove user-level plist if exists
+	home, _ := os.UserHomeDir()
+	userPlist := filepath.Join(home, "Library", "LaunchAgents", "homebrew.mxcl."+brewServiceName+".plist")
+	os.Remove(userPlist)
+
+	// Try to stop via brew (ignore errors)
+	exec.Command("brew", "services", "stop", brewServiceName).Run()
+}
+
+// waitForStart waits for the proxy to become responsive
+func waitForStart() error {
+	for i := 0; i < 20; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if isAdminAPIResponding() || isProcessRunning() {
+			return nil
+		}
+	}
+	return fmt.Errorf("proxy did not start within timeout")
 }
 
 // startDirect starts the proxy directly (fallback if brew not available)
