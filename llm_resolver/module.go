@@ -150,10 +150,9 @@ func (m *LLMResolver) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				m.CacheFile = d.Val()
 			case "compose_project":
-				if !d.NextArg() {
-					return d.ArgErr()
+				if d.NextArg() {
+					m.ComposeProject = d.Val()
 				}
-				m.ComposeProject = d.Val()
 			default:
 				return d.Errf("unknown subdirective '%s'", d.Val())
 			}
