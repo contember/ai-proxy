@@ -39,14 +39,14 @@ func (m *LLMResolver) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		return nil
 	}
 
-	// Debug endpoint
-	if hostname == "proxy.localhost" || r.URL.Path == "/_debug" {
-		return m.handleDebug(w, r)
-	}
-
 	// API endpoints for mapping management
 	if strings.HasPrefix(r.URL.Path, "/_api/mappings/") {
 		return m.handleMappingsAPI(w, r)
+	}
+
+	// Debug endpoint
+	if hostname == "proxy.localhost" || r.URL.Path == "/_debug" {
+		return m.handleDebug(w, r)
 	}
 
 	// Second-level proxy for inter-service communication
@@ -272,126 +272,549 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 	containers, _ := DiscoverDockerContainers(m.ComposeProject)
 	mappings := m.cache.GetAll()
 
+	mappingCount := len(mappings)
+	processCount := len(processes)
+	containerCount := len(containers)
+
 	html := `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>LLM Proxy Debug</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LLM Proxy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
-        body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d9ff; }
-        h2 { color: #ff6b6b; border-bottom: 1px solid #333; padding-bottom: 5px; }
-        .section { background: #16213e; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+        :root {
+            --bg: #0a0a08;
+            --surface: #111110;
+            --surface-raised: #18181a;
+            --border: #222220;
+            --border-subtle: #1a1a18;
+            --text: #d4d0c8;
+            --text-secondary: #8a8780;
+            --text-muted: #5a5850;
+            --accent: #d4a843;
+            --accent-dim: #a07e30;
+            --accent-glow: rgba(212, 168, 67, 0.08);
+            --green: #7ec47e;
+            --green-bg: rgba(126, 196, 126, 0.08);
+            --blue: #7eaac4;
+            --blue-bg: rgba(126, 170, 196, 0.08);
+            --red: #c47e7e;
+            --red-bg: rgba(196, 126, 126, 0.06);
+            --mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+            --sans: 'DM Sans', system-ui, sans-serif;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--sans);
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 50% 0%, rgba(212, 168, 67, 0.03) 0%, transparent 70%),
+                radial-gradient(circle at 20% 80%, rgba(126, 170, 196, 0.02) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .layout {
+            position: relative;
+            z-index: 1;
+            max-width: 1060px;
+            margin: 0 auto;
+            padding: 48px 32px 80px;
+        }
+
+        /* ---- Header ---- */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 48px;
+            animation: fadeIn 0.5s ease-out;
+        }
+        .header-left { display: flex; align-items: baseline; gap: 16px; }
+        .wordmark {
+            font-family: var(--mono);
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.02em;
+        }
+        .wordmark span { color: var(--text-muted); font-weight: 400; }
+        .status-dot {
+            width: 7px; height: 7px;
+            background: var(--green);
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 2px;
+            box-shadow: 0 0 6px rgba(126, 196, 126, 0.4);
+            animation: pulse 3s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .header-actions { display: flex; gap: 6px; align-items: center; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px;
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+            text-transform: uppercase;
+        }
+        .btn:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
+        .btn svg { width: 12px; height: 12px; }
+
+        /* ---- Config strip ---- */
+        .config-strip {
+            display: flex;
+            gap: 24px;
+            padding: 12px 0;
+            margin-bottom: 40px;
+            border-top: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--border-subtle);
+            animation: fadeIn 0.5s ease-out 0.05s both;
+        }
+        .config-pair {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .config-key {
+            font-family: var(--mono);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .config-val {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .config-sep {
+            width: 1px;
+            height: 16px;
+            background: var(--border);
+        }
+
+        /* ---- Stats ---- */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1px;
+            background: var(--border-subtle);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 48px;
+            animation: fadeIn 0.5s ease-out 0.1s both;
+        }
+        .stat {
+            background: var(--surface);
+            padding: 20px 24px;
+            position: relative;
+        }
+        .stat-num {
+            font-family: var(--mono);
+            font-size: 32px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-family: var(--mono);
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* ---- Sections ---- */
+        .section {
+            margin-bottom: 40px;
+            animation: slideUp 0.4s ease-out both;
+        }
+        .section:nth-child(4) { animation-delay: 0.15s; }
+        .section:nth-child(5) { animation-delay: 0.2s; }
+        .section:nth-child(6) { animation-delay: 0.25s; }
+
+        .section-head {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+        }
+        .section-title {
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        .section-count {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .section-line {
+            flex: 1;
+            height: 1px;
+            background: var(--border-subtle);
+            margin-left: 8px;
+        }
+
+        /* ---- Tables ---- */
+        .table-container {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            background: var(--surface);
+        }
         table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #333; }
-        th { color: #00d9ff; }
-        .type-process { color: #4ade80; }
-        .type-docker { color: #60a5fa; }
-        pre { background: #0f0f1a; padding: 10px; border-radius: 4px; overflow-x: auto; }
-        .actions button { background: #ff6b6b; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
-        .actions button:hover { background: #ff5252; }
-        .refresh { background: #00d9ff !important; }
-        .refresh:hover { background: #00b8d9 !important; }
+        thead th {
+            font-family: var(--mono);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 10px 16px;
+            text-align: left;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid var(--border);
+        }
+        thead th:first-child { padding-left: 20px; }
+        tbody td {
+            font-size: 13px;
+            padding: 9px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            vertical-align: middle;
+        }
+        tbody td:first-child { padding-left: 20px; }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr { transition: background 0.1s; }
+        tbody tr:hover { background: rgba(255,255,255,0.015); }
+
+        .cell-hostname {
+            font-family: var(--mono);
+            font-size: 12px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .cell-hostname a {
+            color: inherit;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.15s;
+        }
+        .cell-hostname a:hover { border-color: var(--accent-dim); }
+        .cell-mono {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .cell-dim {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .cell-reason {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-style: italic;
+            max-width: 240px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cell-cmd {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+            max-width: 380px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cell-dir {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            max-width: 240px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            direction: rtl;
+            text-align: left;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-family: var(--mono);
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .tag::before {
+            content: '';
+            width: 5px; height: 5px;
+            border-radius: 50%;
+        }
+        .tag-process { background: var(--green-bg); color: var(--green); }
+        .tag-process::before { background: var(--green); }
+        .tag-docker { background: var(--blue-bg); color: var(--blue); }
+        .tag-docker::before { background: var(--blue); }
+
+        .btn-del {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 5px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-del:hover {
+            background: var(--red-bg);
+            border-color: rgba(196, 126, 126, 0.15);
+            color: var(--red);
+        }
+        .btn-del svg { width: 13px; height: 13px; }
+
+        .empty {
+            padding: 36px 20px;
+            text-align: center;
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 768px) {
+            .layout { padding: 24px 16px 60px; }
+            .stats { grid-template-columns: 1fr; }
+            .config-strip { flex-direction: column; gap: 8px; }
+            .config-sep { display: none; }
+            .header { flex-direction: column; align-items: flex-start; gap: 12px; }
+        }
     </style>
 </head>
 <body>
-    <h1>LLM Proxy Debug Dashboard</h1>
-    <p><button class="refresh" onclick="location.reload()">Refresh</button></p>
+<div class="layout">
+    <div class="header">
+        <div class="header-left">
+            <div class="wordmark">llm-proxy <span>//</span> dashboard</div>
+            <div class="status-dot" title="Running"></div>
+        </div>
+        <div class="header-actions">
+            <button class="btn" onclick="location.reload()">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/><path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/><path d="M11.5 1.5v3h3"/><path d="M4.5 14.5v-3h-3"/></svg>
+                Reload
+            </button>
+        </div>
+    </div>
 
-    <div class="section">
-        <h2>Configuration</h2>
-        <table>
-            <tr><th>Model</th><td>` + m.Model + `</td></tr>
-            <tr><th>Cache File</th><td>` + m.CacheFile + `</td></tr>
-        </table>
+    <div class="config-strip">
+        <div class="config-pair">
+            <span class="config-key">Model</span>
+            <span class="config-val">` + m.Model + `</span>
+        </div>
+        <div class="config-sep"></div>
+        <div class="config-pair">
+            <span class="config-key">Cache</span>
+            <span class="config-val">` + m.CacheFile + `</span>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-num">` + fmt.Sprintf("%d", mappingCount) + `</div>
+            <div class="stat-label">Routes</div>
+        </div>
+        <div class="stat">
+            <div class="stat-num">` + fmt.Sprintf("%d", processCount) + `</div>
+            <div class="stat-label">Processes</div>
+        </div>
+        <div class="stat">
+            <div class="stat-num">` + fmt.Sprintf("%d", containerCount) + `</div>
+            <div class="stat-label">Containers</div>
+        </div>
     </div>
 
     <div class="section">
-        <h2>Current Mappings</h2>
-        <table>
-            <tr><th>Hostname</th><th>Type</th><th>Target</th><th>Port</th><th>Reason</th><th>Actions</th></tr>`
+        <div class="section-head">
+            <span class="section-title">Route Mappings</span>
+            <span class="section-count">` + fmt.Sprintf("%d", mappingCount) + `</span>
+            <div class="section-line"></div>
+        </div>
+        <div class="table-container">`
 
-	for hostname, mapping := range mappings {
-		typeClass := "type-process"
-		if mapping.Type == "docker" {
-			typeClass = "type-docker"
-		}
-		html += fmt.Sprintf(`
-            <tr>
-                <td>%s</td>
-                <td class="%s">%s</td>
-                <td>%s</td>
-                <td>%d</td>
-                <td>%s</td>
-                <td class="actions"><button onclick="deleteMapping('%s')">Delete</button></td>
-            </tr>`, hostname, typeClass, mapping.Type, mapping.Target, mapping.Port, mapping.LLMReason, hostname)
-	}
+	if mappingCount == 0 {
+		html += `<div class="empty">No mappings yet. Visit a *.localhost domain to create one.</div>`
+	} else {
+		html += `
+            <table>
+                <thead><tr><th>Hostname</th><th>Type</th><th>Target</th><th>Port</th><th>Reason</th><th></th></tr></thead>
+                <tbody>`
 
-	html += `
-        </table>
-    </div>
-
-    <div class="section">
-        <h2>Local Processes</h2>
-        <table>
-            <tr><th>Port</th><th>Command</th><th>Working Directory</th></tr>`
-
-	for _, proc := range processes {
-		// Use args if available (more informative), fallback to command
-		cmd := proc.Args
-		if cmd == "" {
-			cmd = proc.Command
-		}
-		// Truncate long commands for display
-		if len(cmd) > 100 {
-			cmd = cmd[:100] + "..."
-		}
-		html += fmt.Sprintf(`
-            <tr>
-                <td>%d</td>
-                <td>%s</td>
-                <td>%s</td>
-            </tr>`, proc.Port, cmd, proc.Workdir)
-	}
-
-	html += `
-        </table>
-    </div>
-
-    <div class="section">
-        <h2>Docker Containers</h2>
-        <table>
-            <tr><th>Name</th><th>Image</th><th>Ports</th><th>IP</th><th>Workdir</th></tr>`
-
-	for _, container := range containers {
-		ports := ""
-		for i, p := range container.Ports {
-			if i > 0 {
-				ports += ", "
+		for hostname, mapping := range mappings {
+			tagClass := "tag-process"
+			if mapping.Type == "docker" {
+				tagClass = "tag-docker"
 			}
-			ports += fmt.Sprintf("%d", p)
+			html += fmt.Sprintf(`
+                <tr>
+                    <td class="cell-hostname"><a href="https://%s" target="_blank">%s</a></td>
+                    <td><span class="tag %s">%s</span></td>
+                    <td class="cell-mono">%s</td>
+                    <td class="cell-dim">%d</td>
+                    <td class="cell-reason" title="%s">%s</td>
+                    <td><button class="btn-del" onclick="deleteMapping('%s')" title="Remove"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button></td>
+                </tr>`, hostname, hostname, tagClass, mapping.Type, mapping.Target, mapping.Port, mapping.LLMReason, mapping.LLMReason, hostname)
 		}
-		html += fmt.Sprintf(`
-            <tr>
-                <td>%s</td>
-                <td>%s</td>
-                <td>%s</td>
-                <td>%s</td>
-                <td>%s</td>
-            </tr>`, container.Name, container.Image, ports, container.IP, container.Workdir)
+
+		html += `
+                </tbody>
+            </table>`
 	}
 
 	html += `
-        </table>
+        </div>
     </div>
 
-    <script>
-        async function deleteMapping(hostname) {
-            if (!confirm('Delete mapping for ' + hostname + '?')) return;
-            const resp = await fetch('/_api/mappings/' + encodeURIComponent(hostname), { method: 'DELETE' });
-            if (resp.ok) location.reload();
-            else alert('Failed to delete');
-        }
-    </script>
+    <div class="section">
+        <div class="section-head">
+            <span class="section-title">Local Processes</span>
+            <span class="section-count">` + fmt.Sprintf("%d", processCount) + `</span>
+            <div class="section-line"></div>
+        </div>
+        <div class="table-container">`
+
+	if processCount == 0 {
+		html += `<div class="empty">No local processes detected.</div>`
+	} else {
+		html += `
+            <table>
+                <thead><tr><th>Port</th><th>Command</th><th>Directory</th></tr></thead>
+                <tbody>`
+
+		for _, proc := range processes {
+			cmd := proc.Args
+			if cmd == "" {
+				cmd = proc.Command
+			}
+			if len(cmd) > 100 {
+				cmd = cmd[:100] + "..."
+			}
+			html += fmt.Sprintf(`
+                <tr>
+                    <td class="cell-mono">%d</td>
+                    <td class="cell-cmd" title="%s">%s</td>
+                    <td class="cell-dir" title="%s">%s</td>
+                </tr>`, proc.Port, cmd, cmd, proc.Workdir, proc.Workdir)
+		}
+
+		html += `
+                </tbody>
+            </table>`
+	}
+
+	html += `
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-head">
+            <span class="section-title">Docker Containers</span>
+            <span class="section-count">` + fmt.Sprintf("%d", containerCount) + `</span>
+            <div class="section-line"></div>
+        </div>
+        <div class="table-container">`
+
+	if containerCount == 0 {
+		html += `<div class="empty">No Docker containers detected.</div>`
+	} else {
+		html += `
+            <table>
+                <thead><tr><th>Name</th><th>Image</th><th>Ports</th><th>IP</th><th>Directory</th></tr></thead>
+                <tbody>`
+
+		for _, container := range containers {
+			ports := ""
+			for i, p := range container.Ports {
+				if i > 0 {
+					ports += ", "
+				}
+				ports += fmt.Sprintf("%d", p)
+			}
+			html += fmt.Sprintf(`
+                <tr>
+                    <td class="cell-hostname">%s</td>
+                    <td class="cell-mono">%s</td>
+                    <td class="cell-dim">%s</td>
+                    <td class="cell-mono">%s</td>
+                    <td class="cell-dir" title="%s">%s</td>
+                </tr>`, container.Name, container.Image, ports, container.IP, container.Workdir, container.Workdir)
+		}
+
+		html += `
+                </tbody>
+            </table>`
+	}
+
+	html += `
+        </div>
+    </div>
+</div>
+
+<script>
+    async function deleteMapping(hostname) {
+        if (!confirm('Remove route mapping for ' + hostname + '?')) return;
+        const row = event.target.closest('tr');
+        if (row) { row.style.opacity = '0.3'; row.style.transition = 'opacity 0.2s'; }
+        const resp = await fetch('/_api/mappings/' + encodeURIComponent(hostname), { method: 'DELETE' });
+        if (resp.ok) location.reload();
+        else { if (row) row.style.opacity = '1'; alert('Failed to delete mapping'); }
+    }
+</script>
 </body>
 </html>`
 
