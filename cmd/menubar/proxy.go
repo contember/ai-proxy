@@ -348,6 +348,8 @@ func TrustCertificate(config *Config) error {
 	// Try multiple possible certificate locations
 	certPaths := []string{
 		filepath.Join(home, "Library", "Application Support", "Caddy", "pki", "authorities", "local", "root.crt"),
+		"/opt/homebrew/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
+		"/usr/local/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
 		"/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
 	}
 
