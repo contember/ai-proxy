@@ -28,19 +28,9 @@ class CaddyLlmProxy < Formula
 
   def install
     bin.install "caddy" => "caddy-llm-proxy-bin"
+    bin.install "cli" => "caddy-llm-proxy"
     (etc/"caddy-llm-proxy").mkpath
     (etc/"caddy-llm-proxy").install "Caddyfile" unless (etc/"caddy-llm-proxy/Caddyfile").exist?
-
-    # Create wrapper script that loads env file
-    (bin/"caddy-llm-proxy").write <<~EOS
-      #!/bin/bash
-      set -a
-      [ -f "#{etc}/caddy-llm-proxy/env" ] && source "#{etc}/caddy-llm-proxy/env"
-      set +a
-      export CADDY_DATA_DIR="${CADDY_DATA_DIR:-#{var}/lib/caddy-llm-proxy}"
-      exec "#{opt_bin}/caddy-llm-proxy-bin" "$@"
-    EOS
-    (bin/"caddy-llm-proxy").chmod 0755
 
     # Install menubar app (macOS only)
     if File.exist?("menubar") && OS.mac?
@@ -117,10 +107,11 @@ class CaddyLlmProxy < Formula
 
   def caveats
     s = <<~EOS
-      Add your API key to #{etc}/caddy-llm-proxy/env:
-        echo "LLM_API_KEY=sk-your-key" >> #{etc}/caddy-llm-proxy/env
+      Run the interactive setup to configure API key, trust certificate, and start:
+        caddy-llm-proxy setup
 
-      Start the service:
+      Or configure manually:
+        echo "LLM_API_KEY=sk-your-key" >> #{etc}/caddy-llm-proxy/env
         sudo brew services start caddy-llm-proxy
 
       Logs: #{var}/log/caddy-llm-proxy.log

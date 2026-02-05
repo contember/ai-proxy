@@ -49,6 +49,15 @@ jobs:
             --with github.com/contember/ai-proxy/llm_resolver=${{ github.workspace }}/llm_resolver \
             --output caddy
 
+      - name: Build CLI
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          cd cmd/cli
+          go build -ldflags="-s -w" -o ../../cli .
+
       - name: Build menubar app (macOS only)
         if: matrix.os == 'darwin'
         env:
@@ -61,9 +70,9 @@ jobs:
       - name: Create tarball
         run: |
           if [ "${{ matrix.os }}" = "darwin" ]; then
-            tar czf caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz caddy menubar Caddyfile
+            tar czf caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz caddy cli menubar Caddyfile
           else
-            tar czf caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz caddy Caddyfile
+            tar czf caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz caddy cli Caddyfile
           fi
           shasum -a 256 caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz > caddy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
 

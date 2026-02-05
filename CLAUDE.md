@@ -36,6 +36,16 @@ llm_resolver/                    # Caddy module (Go package)
     ├── docker.go                # Docker container discovery
     └── processes.go             # Local process discovery
 
+cmd/cli/                         # CLI binary (caddy-llm-proxy command)
+├── main.go                      # Entry point, subcommand dispatch
+├── config.go                    # Configuration handling
+├── proxy.go                     # Proxy status/start/stop/restart
+├── setup.go                     # Interactive setup flow
+├── delegate.go                  # Env sourcing + exec to caddy
+├── terminal.go                  # ANSI colors, prompts
+├── trust_darwin.go              # macOS certificate trust
+└── trust_other.go               # Linux certificate trust stub
+
 cmd/menubar/                     # macOS menubar app
 ├── main.go                      # Entry point
 ├── app.go                       # Application logic
