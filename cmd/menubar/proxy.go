@@ -388,12 +388,55 @@ func TrustCertificate(config *Config) error {
 	// Import to login keychain (ignore error if already exists)
 	exec.Command("security", "import", tempCert, "-k", loginKeychain).Run()
 
-	// Add as trusted root certificate
-	if output, err := exec.Command("security", "add-trusted-cert", "-r", "trustRoot", "-k", loginKeychain, tempCert).CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to trust certificate: %s", strings.TrimSpace(string(output)))
+	// Check if certificate is already trusted
+	if isCertTrusted() {
+		return nil
 	}
 
-	return nil
+	// Try to add as trusted root certificate with SSL policy
+	exec.Command("security", "add-trusted-cert", "-r", "trustRoot", "-p", "ssl", "-k", loginKeychain, tempCert).Run()
+
+	// Verify trust was set
+	if isCertTrusted() {
+		return nil
+	}
+
+	// Trust settings not properly set - open certificate for manual trust via macOS UI
+	// This opens Keychain Access which allows the user to set trust properly
+	exec.Command("open", tempCert).Run()
+	return fmt.Errorf("certificate opened in Keychain Access - set 'Always Trust' for SSL, then restart your browser")
+}
+
+// isCertTrusted checks if the Caddy root CA has SSL trust settings configured
+func isCertTrusted() bool {
+	output, err := exec.Command("security", "dump-trust-settings").CombinedOutput()
+	if err != nil {
+		return false
+	}
+
+	lines := strings.Split(string(output), "\n")
+	inCaddyCert := false
+	for _, line := range lines {
+		if strings.Contains(line, "Caddy Local Authority") {
+			inCaddyCert = true
+			continue
+		}
+		if inCaddyCert {
+			// Check if this cert has trust settings
+			if strings.Contains(line, "Number of trust settings : 0") {
+				inCaddyCert = false
+				continue
+			}
+			if strings.Contains(line, "Policy OID") && strings.Contains(line, "SSL") {
+				return true
+			}
+			// New certificate section starts
+			if strings.HasPrefix(strings.TrimSpace(line), "Cert ") {
+				inCaddyCert = false
+			}
+		}
+	}
+	return false
 }
 
 // copyFile copies a file from src to dst
