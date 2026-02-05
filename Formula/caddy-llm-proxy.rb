@@ -41,6 +41,52 @@ class CaddyLlmProxy < Formula
       exec "#{opt_bin}/caddy-llm-proxy-bin" "$@"
     EOS
     (bin/"caddy-llm-proxy").chmod 0755
+
+    # Install menubar app (macOS only)
+    if File.exist?("menubar") && OS.mac?
+      # Create app bundle
+      app_name = "Caddy LLM Proxy.app"
+      app_path = prefix/app_name
+      (app_path/"Contents/MacOS").mkpath
+      (app_path/"Contents/Resources").mkpath
+
+      cp "menubar", app_path/"Contents/MacOS/menubar"
+      chmod 0755, app_path/"Contents/MacOS/menubar"
+
+      # Create Info.plist
+      (app_path/"Contents/Info.plist").write <<~XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>CFBundleExecutable</key>
+          <string>menubar</string>
+          <key>CFBundleIdentifier</key>
+          <string>com.contember.caddy-llm-proxy</string>
+          <key>CFBundleName</key>
+          <string>Caddy LLM Proxy</string>
+          <key>CFBundleDisplayName</key>
+          <string>Caddy LLM Proxy</string>
+          <key>CFBundleVersion</key>
+          <string>#{version}</string>
+          <key>CFBundleShortVersionString</key>
+          <string>#{version}</string>
+          <key>CFBundlePackageType</key>
+          <string>APPL</string>
+          <key>LSUIElement</key>
+          <true/>
+          <key>LSMinimumSystemVersion</key>
+          <string>10.13</string>
+          <key>NSHighResolutionCapable</key>
+          <true/>
+        </dict>
+        </plist>
+      XML
+
+      # Link to Applications via prefix
+      (prefix/"Applications").mkpath
+      ln_sf app_path, prefix/"Applications/#{app_name}"
+    end
   end
 
   service do
@@ -67,7 +113,7 @@ class CaddyLlmProxy < Formula
   end
 
   def caveats
-    <<~EOS
+    s = <<~EOS
       Add your API key to #{etc}/caddy-llm-proxy/env:
         echo "LLM_API_KEY=sk-your-key" >> #{etc}/caddy-llm-proxy/env
 
@@ -76,6 +122,18 @@ class CaddyLlmProxy < Formula
 
       Logs: #{var}/log/caddy-llm-proxy.log
     EOS
+
+    if OS.mac?
+      s += <<~EOS
+
+        Menu bar app installed at:
+          #{opt_prefix}/Caddy LLM Proxy.app
+
+        To add to Login Items, drag the app to System Settings > General > Login Items
+      EOS
+    end
+
+    s
   end
 
   test do
