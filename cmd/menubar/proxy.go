@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -36,6 +38,10 @@ func init() {
 		LogFile = filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
 	}
 }
+
+// ErrManualTrustRequired is returned when the certificate was opened in Keychain Access
+// for manual trust configuration. This is not a failure — it just needs user action.
+var ErrManualTrustRequired = fmt.Errorf("certificate opened in Keychain Access - set 'Always Trust' for SSL, then restart your browser")
 
 // ProxyStatus represents the current state of the proxy
 type ProxyStatus int
@@ -96,19 +102,6 @@ func isProcessRunning() bool {
 	return err == nil
 }
 
-// isHTTPResponding checks if the proxy responds to HTTP requests
-func isHTTPResponding() bool {
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-	}
-	resp, err := client.Get("http://127.0.0.1:80/")
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return true
-}
-
 // StartProxy starts the proxy via brew services (requires one-time sudo)
 func StartProxy(config *Config) error {
 	// Check if brew services can be used
@@ -148,8 +141,13 @@ func startViaBrew() error {
 		`do shell script "launchctl bootout system/homebrew.mxcl.%s 2>/dev/null; rm -f /Library/LaunchDaemons/homebrew.mxcl.%s.plist 2>/dev/null; brew services start %s 2>/dev/null; exit 0" with administrator privileges`,
 		brewServiceName, brewServiceName, brewServiceName,
 	)
-	cmd = exec.Command("osascript", "-e", script)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd = exec.CommandContext(ctx, "osascript", "-e", script)
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("timed out waiting for admin privileges")
+		}
 		// Check if it actually started despite the error
 		if err := waitForStart(); err == nil {
 			return nil
@@ -367,14 +365,14 @@ func TrustCertificate(config *Config) error {
 
 		// Try with admin privileges (handles permission denied on root-owned directories)
 		copyScript := fmt.Sprintf(
-			`do shell script "test -f '%s' && cp '%s' '%s' && chmod 644 '%s'" with administrator privileges`,
-			escapeAppleScript(certPath),
-			escapeAppleScript(certPath),
-			escapeAppleScript(tempCert),
-			escapeAppleScript(tempCert),
+			`do shell script "test -f %q && cp %q %q && chmod 644 %q" with administrator privileges`,
+			certPath, certPath, tempCert, tempCert,
 		)
-		cmd := exec.Command("osascript", "-e", copyScript)
-		if _, err := cmd.CombinedOutput(); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		cmd := exec.CommandContext(ctx, "osascript", "-e", copyScript)
+		_, err := cmd.CombinedOutput()
+		cancel()
+		if err == nil {
 			copyErr = nil
 			break
 		}
@@ -385,8 +383,16 @@ func TrustCertificate(config *Config) error {
 		return fmt.Errorf("certificate not found - start the proxy first and make an HTTPS request")
 	}
 
-	// Import to login keychain (ignore error if already exists)
-	exec.Command("security", "import", tempCert, "-k", loginKeychain).Run()
+	// Clean up temp file when done
+	defer os.Remove(tempCert)
+
+	// Import to login keychain
+	if output, err := exec.Command("security", "import", tempCert, "-k", loginKeychain).CombinedOutput(); err != nil {
+		// "already exists" is not a real error
+		if !strings.Contains(string(output), "already exists") {
+			log.Printf("warning: certificate import failed: %s", strings.TrimSpace(string(output)))
+		}
+	}
 
 	// Check if certificate is already trusted
 	if isCertTrusted() {
@@ -394,7 +400,9 @@ func TrustCertificate(config *Config) error {
 	}
 
 	// Try to add as trusted root certificate with SSL policy
-	exec.Command("security", "add-trusted-cert", "-r", "trustRoot", "-p", "ssl", "-k", loginKeychain, tempCert).Run()
+	if output, err := exec.Command("security", "add-trusted-cert", "-r", "trustRoot", "-p", "ssl", "-k", loginKeychain, tempCert).CombinedOutput(); err != nil {
+		log.Printf("warning: add-trusted-cert failed: %s", strings.TrimSpace(string(output)))
+	}
 
 	// Verify trust was set
 	if isCertTrusted() {
@@ -402,32 +410,49 @@ func TrustCertificate(config *Config) error {
 	}
 
 	// Trust settings not properly set - open certificate for manual trust via macOS UI
-	// This opens Keychain Access which allows the user to set trust properly
+	// This opens Keychain Access which allows the user to set trust properly.
+	// Give Keychain Access time to read the file before the deferred os.Remove cleans it up.
 	exec.Command("open", tempCert).Run()
-	return fmt.Errorf("certificate opened in Keychain Access - set 'Always Trust' for SSL, then restart your browser")
+	time.Sleep(2 * time.Second)
+	return ErrManualTrustRequired
 }
 
 // isCertTrusted checks if the Caddy root CA has SSL trust settings configured
 func isCertTrusted() bool {
-	output, err := exec.Command("security", "dump-trust-settings").CombinedOutput()
-	if err != nil {
-		return false
+	// Check both user and admin trust settings domains
+	for _, domain := range []string{"", "-d"} {
+		args := []string{"dump-trust-settings"}
+		if domain != "" {
+			args = append(args, domain)
+		}
+		output, err := exec.Command("security", args...).CombinedOutput()
+		if err != nil {
+			continue
+		}
+		if checkTrustOutput(string(output)) {
+			return true
+		}
 	}
+	return false
+}
 
-	lines := strings.Split(string(output), "\n")
+// checkTrustOutput parses security dump-trust-settings output for Caddy cert trust
+func checkTrustOutput(output string) bool {
+	lines := strings.Split(output, "\n")
 	inCaddyCert := false
 	for _, line := range lines {
-		if strings.Contains(line, "Caddy Local Authority") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "caddy local authority") {
 			inCaddyCert = true
 			continue
 		}
 		if inCaddyCert {
 			// Check if this cert has trust settings
-			if strings.Contains(line, "Number of trust settings : 0") {
+			if strings.Contains(lower, "number of trust settings : 0") {
 				inCaddyCert = false
 				continue
 			}
-			if strings.Contains(line, "Policy OID") && strings.Contains(line, "SSL") {
+			if strings.Contains(lower, "policy oid") && strings.Contains(lower, "ssl") {
 				return true
 			}
 			// New certificate section starts

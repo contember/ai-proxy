@@ -2,7 +2,9 @@ package main
 
 import (
 	_ "embed"
+	"errors"
 	"os/exec"
+	"sync"
 	"time"
 
 	"fyne.io/systray"
@@ -17,6 +19,7 @@ var iconStopped []byte
 // App holds the application state
 type App struct {
 	config *Config
+	mu     sync.Mutex
 	status ProxyStatus
 
 	// Menu items
@@ -72,6 +75,11 @@ func (a *App) onReady() {
 
 	// Handle menu clicks
 	go a.handleEvents()
+
+	// Prompt for API key on first run if not configured
+	if !a.config.HasAPIKey() {
+		go a.promptFirstRunAPIKey()
+	}
 }
 
 // onExit is called when the app is quitting
@@ -95,15 +103,23 @@ func (a *App) monitorStatus() {
 // updateStatus checks and updates the proxy status
 func (a *App) updateStatus() {
 	newStatus := CheckProxyStatus(a.config)
-	if newStatus != a.status {
+	a.mu.Lock()
+	changed := newStatus != a.status
+	if changed {
 		a.status = newStatus
+	}
+	a.mu.Unlock()
+	if changed {
 		a.refreshUI()
 	}
 }
 
-// refreshUI updates the UI to reflect current status
+// refreshUI updates the UI to reflect current status. Must be called without a.mu held.
 func (a *App) refreshUI() {
-	switch a.status {
+	a.mu.Lock()
+	status := a.status
+	a.mu.Unlock()
+	switch status {
 	case StatusRunning:
 		systray.SetTemplateIcon(iconRunning, iconRunning)
 		a.mStatus.SetTitle("Status: Running")
@@ -139,11 +155,11 @@ func (a *App) handleEvents() {
 	for {
 		select {
 		case <-a.mToggle.ClickedCh:
-			a.handleToggle()
+			go a.handleToggle()
 		case <-a.mConfigureKey.ClickedCh:
-			a.handleConfigureKey()
+			go a.handleConfigureKey()
 		case <-a.mTrustCert.ClickedCh:
-			a.handleTrustCert()
+			go a.handleTrustCert()
 		case <-a.mDashboard.ClickedCh:
 			a.handleOpenDashboard()
 		case <-a.mDefaultURL.ClickedCh:
@@ -159,9 +175,15 @@ func (a *App) handleEvents() {
 
 // handleToggle starts or stops the proxy
 func (a *App) handleToggle() {
-	if a.status == StatusRunning {
+	a.mu.Lock()
+	currentStatus := a.status
+	a.mu.Unlock()
+
+	if currentStatus == StatusRunning {
 		// Stop proxy
+		a.mu.Lock()
 		a.status = StatusStopping
+		a.mu.Unlock()
 		a.refreshUI()
 
 		if err := StopProxy(a.config); err != nil {
@@ -171,7 +193,7 @@ func (a *App) handleToggle() {
 		// Wait a moment then update status
 		time.Sleep(1 * time.Second)
 		a.updateStatus()
-	} else if a.status == StatusStopped {
+	} else if currentStatus == StatusStopped {
 		// Check if API key is configured
 		if !a.config.HasAPIKey() {
 			showAlert("API Key Required",
@@ -181,12 +203,16 @@ func (a *App) handleToggle() {
 		}
 
 		// Start proxy
+		a.mu.Lock()
 		a.status = StatusStarting
+		a.mu.Unlock()
 		a.refreshUI()
 
 		if err := StartProxy(a.config); err != nil {
 			showAlert("Error", "Failed to start proxy: "+err.Error(), true)
+			a.mu.Lock()
 			a.status = StatusStopped
+			a.mu.Unlock()
 			a.refreshUI()
 			return
 		}
@@ -245,7 +271,10 @@ func (a *App) handleConfigureKey() {
 	showAlert("Success", "API key has been saved.", false)
 
 	// Restart proxy if running
-	if a.status == StatusRunning {
+	a.mu.Lock()
+	running := a.status == StatusRunning
+	a.mu.Unlock()
+	if running {
 		confirmed, _ := showConfirmDialog("Restart Proxy?",
 			"The proxy needs to be restarted for the new API key to take effect. Restart now?")
 		if confirmed {
@@ -274,10 +303,28 @@ func (a *App) handleViewLogs() {
 // handleTrustCert installs Caddy's root certificate to the system trust store
 func (a *App) handleTrustCert() {
 	if err := TrustCertificate(a.config); err != nil {
+		if errors.Is(err, ErrManualTrustRequired) {
+			showAlert("Manual Trust Required",
+				"The certificate has been opened in Keychain Access.\n\nDouble-click the certificate, expand \"Trust\", set SSL to \"Always Trust\", then restart your browser.",
+				false)
+			return
+		}
 		showAlert("Error", "Failed to trust certificate: "+err.Error(), true)
 		return
 	}
 	showAlert("Success", "Certificate trusted successfully.\n\nRestart your browser for the change to take effect.", false)
+}
+
+// promptFirstRunAPIKey asks the user to configure their API key on first launch
+func (a *App) promptFirstRunAPIKey() {
+	// Small delay so the menu bar icon appears first
+	time.Sleep(500 * time.Millisecond)
+
+	confirmed, _ := showConfirmDialog("Welcome to Caddy LLM Proxy",
+		"No API key is configured yet. Would you like to set your OpenRouter API key now?")
+	if confirmed {
+		a.handleConfigureKey()
+	}
 }
 
 // Run starts the systray application
