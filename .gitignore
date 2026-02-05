@@ -27,3 +27,7 @@ vendor/
 # Data
 /data/
 *.json.tmp
+
+# Build artifacts
+/build/
+cmd/menubar/menubar
