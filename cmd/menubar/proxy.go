@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -10,7 +12,15 @@ import (
 	"time"
 )
 
-// LogFile is where proxy logs are written
+const (
+	// Caddy admin API endpoint
+	adminAPI = "http://localhost:2019"
+
+	// Homebrew service name
+	brewServiceName = "caddy-llm-proxy"
+)
+
+// LogFile is where proxy logs are written (when using brew services)
 var LogFile string
 
 func init() {
@@ -18,7 +28,13 @@ func init() {
 	if err != nil {
 		home = os.Getenv("HOME")
 	}
-	LogFile = filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+	// Brew services log location
+	LogFile = filepath.Join(home, "Library", "Logs", "Homebrew", "caddy-llm-proxy.log")
+
+	// Fall back to our custom location if brew logs don't exist
+	if _, err := os.Stat(LogFile); os.IsNotExist(err) {
+		LogFile = filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+	}
 }
 
 // ProxyStatus represents the current state of the proxy
@@ -44,24 +60,38 @@ func (s ProxyStatus) String() string {
 	}
 }
 
-// CheckProxyStatus checks if the proxy is running using multiple methods
+// CheckProxyStatus checks if the proxy is running
 func CheckProxyStatus(config *Config) ProxyStatus {
-	// Method 1: Check if the process is running
+	// Check if Caddy admin API responds (most reliable)
+	if isAdminAPIResponding() {
+		return StatusRunning
+	}
+
+	// Fallback: check if process is running
 	if isProcessRunning() {
-		// Method 2: Verify the HTTP endpoint responds
-		if isHTTPResponding() {
-			return StatusRunning
-		}
-		// Process running but not responding yet - might be starting
+		// Process running but admin API not responding - might be starting
 		return StatusStarting
 	}
+
 	return StatusStopped
+}
+
+// isAdminAPIResponding checks if Caddy's admin API is accessible
+func isAdminAPIResponding() bool {
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+	resp, err := client.Get(adminAPI + "/config/")
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // isProcessRunning checks if caddy-llm-proxy process is running
 func isProcessRunning() bool {
-	// Check for the actual proxy process (with "run" argument), not menubar app
-	cmd := exec.Command("pgrep", "-f", "caddy-llm-proxy run")
+	cmd := exec.Command("pgrep", "-f", "caddy-llm-proxy")
 	err := cmd.Run()
 	return err == nil
 }
@@ -71,7 +101,7 @@ func isHTTPResponding() bool {
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 	}
-	resp, err := client.Get("http://127.0.0.1:80/_tls_check")
+	resp, err := client.Get("http://127.0.0.1:80/")
 	if err != nil {
 		return false
 	}
@@ -79,20 +109,61 @@ func isHTTPResponding() bool {
 	return true
 }
 
-// StartProxy starts the caddy-llm-proxy with admin privileges
+// StartProxy starts the proxy via brew services (requires one-time sudo)
 func StartProxy(config *Config) error {
-	// Clear old logs before starting (use > instead of >> to truncate)
-	// Build the shell command to run with admin privileges
-	// Use set -a to auto-export all variables, source the env file, then run caddy
+	// Check if brew services can be used
+	if isBrewServiceAvailable() {
+		return startViaBrew()
+	}
+
+	// Fallback to direct start with admin privileges
+	return startDirect(config)
+}
+
+// isBrewServiceAvailable checks if the brew service is installed
+func isBrewServiceAvailable() bool {
+	cmd := exec.Command("brew", "services", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), brewServiceName)
+}
+
+// startViaBrew starts the proxy using brew services
+func startViaBrew() error {
+	// Try without sudo first (works if already authenticated or user has permissions)
+	cmd := exec.Command("brew", "services", "start", brewServiceName)
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	// Need sudo - use osascript for GUI prompt
+	script := fmt.Sprintf(
+		`do shell script "brew services start %s" with administrator privileges`,
+		brewServiceName,
+	)
+	cmd = exec.Command("osascript", "-e", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to start service: %s", strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+// startDirect starts the proxy directly (fallback if brew not available)
+func startDirect(config *Config) error {
+	home, _ := os.UserHomeDir()
+	logFile := filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+
 	shellCmd := fmt.Sprintf(
-		"set -a; source '%s'; '%s' run --config '%s' > '%s' 2>&1 &",
+		"set -a; source '%s'; '%s' run --config '%s' >> '%s' 2>&1 &",
 		config.EnvFile,
 		config.BinaryPath,
 		config.CaddyFile,
-		LogFile,
+		logFile,
 	)
 
-	// Use osascript to get admin privileges and run in background
 	script := fmt.Sprintf(
 		`do shell script "%s" with administrator privileges`,
 		escapeAppleScript(shellCmd),
@@ -101,22 +172,76 @@ func StartProxy(config *Config) error {
 	cmd := exec.Command("osascript", "-e", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to start proxy: %s: %w", string(output), err)
+		return fmt.Errorf("failed to start proxy: %s", strings.TrimSpace(string(output)))
 	}
-
 	return nil
 }
 
-// StopProxy stops the caddy-llm-proxy
+// StopProxy stops the proxy via Caddy admin API (no sudo required!)
 func StopProxy(config *Config) error {
-	// Use osascript to kill the process with admin privileges
-	// Match "caddy-llm-proxy run" to avoid killing the menubar app
-	script := `do shell script "pkill -f 'caddy-llm-proxy run'; exit 0" with administrator privileges`
+	// Try graceful stop via admin API first
+	if isAdminAPIResponding() {
+		client := &http.Client{
+			Timeout: 10 * time.Second,
+		}
 
-	cmd := exec.Command("osascript", "-e", script)
-	cmd.Run() // Ignore error - we'll verify by checking if process stopped
+		req, err := http.NewRequest("POST", adminAPI+"/stop", nil)
+		if err != nil {
+			return err
+		}
 
-	// Wait and verify the process actually stopped
+		resp, err := client.Do(req)
+		if err != nil {
+			// API not responding, try other methods
+			return stopViaBrewOrKill()
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			// Wait for process to exit
+			for i := 0; i < 20; i++ {
+				if !isProcessRunning() {
+					return nil
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+		}
+	}
+
+	// Fallback to brew services stop or kill
+	return stopViaBrewOrKill()
+}
+
+// stopViaBrewOrKill stops the proxy via brew services or direct kill
+func stopViaBrewOrKill() error {
+	// Try brew services stop (doesn't require sudo for stop)
+	if isBrewServiceAvailable() {
+		cmd := exec.Command("brew", "services", "stop", brewServiceName)
+		if err := cmd.Run(); err == nil {
+			// Wait for stop
+			for i := 0; i < 10; i++ {
+				if !isProcessRunning() {
+					return nil
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}
+
+	// Last resort: kill the process (may need sudo)
+	if isProcessRunning() {
+		// Try regular kill first
+		exec.Command("pkill", "-f", "caddy-llm-proxy").Run()
+		time.Sleep(500 * time.Millisecond)
+
+		if isProcessRunning() {
+			// Need sudo
+			script := `do shell script "pkill -f caddy-llm-proxy; exit 0" with administrator privileges`
+			exec.Command("osascript", "-e", script).Run()
+		}
+	}
+
+	// Verify stopped
 	for i := 0; i < 10; i++ {
 		if !isProcessRunning() {
 			return nil
@@ -124,16 +249,42 @@ func StopProxy(config *Config) error {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	// If still running after 5 seconds, return error
 	if isProcessRunning() {
 		return fmt.Errorf("proxy did not stop within timeout")
 	}
-
 	return nil
 }
 
 // RestartProxy restarts the proxy
 func RestartProxy(config *Config) error {
+	// If admin API is available, we can do a graceful reload
+	if isAdminAPIResponding() {
+		// Read the Caddyfile and reload via API
+		caddyfileContent, err := os.ReadFile(config.CaddyFile)
+		if err == nil {
+			client := &http.Client{
+				Timeout: 10 * time.Second,
+			}
+
+			req, err := http.NewRequest("POST", adminAPI+"/load",
+				bytes.NewReader(caddyfileContent))
+			if err == nil {
+				req.Header.Set("Content-Type", "text/caddyfile")
+				resp, err := client.Do(req)
+				if err == nil {
+					defer resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						return nil
+					}
+					// Read error message
+					body, _ := io.ReadAll(resp.Body)
+					return fmt.Errorf("reload failed: %s", string(body))
+				}
+			}
+		}
+	}
+
+	// Fallback to stop + start
 	if err := StopProxy(config); err != nil {
 		return fmt.Errorf("failed to stop: %w", err)
 	}
@@ -151,7 +302,6 @@ func RestartProxy(config *Config) error {
 
 // escapeAppleScript escapes a string for use in AppleScript
 func escapeAppleScript(s string) string {
-	// Escape backslashes and double quotes
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "\"", "\\\"")
 	return s
@@ -159,34 +309,60 @@ func escapeAppleScript(s string) string {
 
 // TrustCertificate installs Caddy's root CA certificate to the system trust store
 func TrustCertificate(config *Config) error {
-	// Get the path to Caddy's root certificate
 	home, _ := os.UserHomeDir()
-	certPath := filepath.Join(home, "Library", "Application Support", "Caddy", "pki", "authorities", "local", "root.crt")
-	loginKeychain := filepath.Join(home, "Library", "Keychains", "login.keychain-db")
 
-	// Copy the certificate to a temp location (the original is owned by root)
+	// Try multiple possible certificate locations
+	certPaths := []string{
+		filepath.Join(home, "Library", "Application Support", "Caddy", "pki", "authorities", "local", "root.crt"),
+		"/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
+	}
+
+	var certPath string
+	for _, p := range certPaths {
+		if _, err := os.Stat(p); err == nil {
+			certPath = p
+			break
+		}
+	}
+
+	if certPath == "" {
+		return fmt.Errorf("certificate not found - start the proxy first and make an HTTPS request")
+	}
+
+	loginKeychain := filepath.Join(home, "Library", "Keychains", "login.keychain-db")
 	tempCert := filepath.Join(os.TempDir(), "caddy-root-ca.crt")
 
-	// Copy with admin privileges since source is owned by root
-	copyScript := fmt.Sprintf(
-		`do shell script "cp '%s' '%s' && chmod 644 '%s'" with administrator privileges`,
-		escapeAppleScript(certPath),
-		escapeAppleScript(tempCert),
-		escapeAppleScript(tempCert),
-	)
-
-	cmd := exec.Command("osascript", "-e", copyScript)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("certificate not found - start the proxy first: %s", strings.TrimSpace(string(output)))
+	// Copy the certificate (may need admin if owned by root)
+	if err := copyFile(certPath, tempCert); err != nil {
+		// Try with admin privileges
+		copyScript := fmt.Sprintf(
+			`do shell script "cp '%s' '%s' && chmod 644 '%s'" with administrator privileges`,
+			escapeAppleScript(certPath),
+			escapeAppleScript(tempCert),
+			escapeAppleScript(tempCert),
+		)
+		cmd := exec.Command("osascript", "-e", copyScript)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("cannot access certificate: %s", strings.TrimSpace(string(output)))
+		}
 	}
 
 	// Import to login keychain (ignore error if already exists)
 	exec.Command("security", "import", tempCert, "-k", loginKeychain).Run()
 
-	// Add as trusted root certificate to login keychain
+	// Add as trusted root certificate
 	if output, err := exec.Command("security", "add-trusted-cert", "-r", "trustRoot", "-k", loginKeychain, tempCert).CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to trust certificate: %s", strings.TrimSpace(string(output)))
 	}
 
 	return nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	input, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, input, 0644)
 }
