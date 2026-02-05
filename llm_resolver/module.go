@@ -52,6 +52,9 @@ type LLMResolver struct {
 
 	// resolveGroup deduplicates concurrent LLM requests for the same hostname
 	resolveGroup singleflight.Group
+
+	// networkTunnel manages WireGuard tunnel to Docker VM on macOS
+	networkTunnel *NetworkTunnel
 }
 
 // CaddyModule returns the Caddy module information.
@@ -85,6 +88,13 @@ func (m *LLMResolver) Provision(ctx caddy.Context) error {
 
 	// Initialize resolver
 	m.resolver = NewResolver(m.APIKey, m.APIURL, m.Model, m.ComposeProject, m.logger)
+
+	// Initialize network tunnel for Docker VM access on macOS
+	m.networkTunnel = NewNetworkTunnel(m.logger)
+	if err := m.networkTunnel.Start(); err != nil {
+		m.logger.Warn("failed to start network tunnel", zap.Error(err))
+		// Non-fatal: proxy will still work with published ports
+	}
 
 	m.logger.Info("LLM resolver provisioned",
 		zap.String("model", m.Model),
@@ -121,6 +131,9 @@ func (m *LLMResolver) Validate() error {
 
 // Cleanup is called when the module is being unloaded.
 func (m *LLMResolver) Cleanup() error {
+	if m.networkTunnel != nil {
+		m.networkTunnel.Stop()
+	}
 	return nil
 }
 
