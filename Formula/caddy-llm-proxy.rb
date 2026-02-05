@@ -94,10 +94,13 @@ class CaddyLlmProxy < Formula
     keep_alive true
     log_path var/"log/caddy-llm-proxy.log"
     error_log_path var/"log/caddy-llm-proxy.error.log"
+    environment_variables XDG_DATA_HOME: HOMEBREW_PREFIX/"share", XDG_CONFIG_HOME: HOMEBREW_PREFIX/"etc"
   end
 
   def post_install
     (var/"lib/caddy-llm-proxy").mkpath
+    # Create Caddy data directory for PKI certificates
+    (share/"caddy").mkpath
     # Create example env file if it doesn't exist
     env_file = etc/"caddy-llm-proxy/env"
     unless env_file.exist?

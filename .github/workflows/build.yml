@@ -128,12 +128,28 @@ jobs:
           SHA_LINUX_ARM64=$(cat release/caddy-linux-arm64.tar.gz.sha256 | awk '{print $1}')
           SHA_LINUX_AMD64=$(cat release/caddy-linux-amd64.tar.gz.sha256 | awk '{print $1}')
 
-          # Update formula
-          sed -i "s/version \".*\"/version \"${VERSION}\"/" Formula/caddy-llm-proxy.rb
-          sed -i "s/SHA256_DARWIN_ARM64/${SHA_DARWIN_ARM64}/" Formula/caddy-llm-proxy.rb
-          sed -i "s/SHA256_DARWIN_AMD64/${SHA_DARWIN_AMD64}/" Formula/caddy-llm-proxy.rb
-          sed -i "s/SHA256_LINUX_ARM64/${SHA_LINUX_ARM64}/" Formula/caddy-llm-proxy.rb
-          sed -i "s/SHA256_LINUX_AMD64/${SHA_LINUX_AMD64}/" Formula/caddy-llm-proxy.rb
+          # Update formula using awk for precise replacements
+          awk -v ver="$VERSION" \
+              -v sha_darwin_arm64="$SHA_DARWIN_ARM64" \
+              -v sha_darwin_amd64="$SHA_DARWIN_AMD64" \
+              -v sha_linux_arm64="$SHA_LINUX_ARM64" \
+              -v sha_linux_amd64="$SHA_LINUX_AMD64" '
+            /version "/ { gsub(/"[0-9]+\.[0-9]+\.[0-9]+"/, "\"" ver "\"") }
+            /on_macos do/,/end/ {
+              if (/on_arm do/) { in_macos_arm=1 }
+              if (/on_intel do/) { in_macos_arm=0; in_macos_intel=1 }
+              if (in_macos_arm && /sha256 "/) { gsub(/"[a-f0-9]{64}"/, "\"" sha_darwin_arm64 "\"") }
+              if (in_macos_intel && /sha256 "/) { gsub(/"[a-f0-9]{64}"/, "\"" sha_darwin_amd64 "\""); in_macos_intel=0 }
+            }
+            /on_linux do/,/end/ {
+              if (/on_arm do/) { in_linux_arm=1 }
+              if (/on_intel do/) { in_linux_arm=0; in_linux_intel=1 }
+              if (in_linux_arm && /sha256 "/) { gsub(/"[a-f0-9]{64}"/, "\"" sha_linux_arm64 "\"") }
+              if (in_linux_intel && /sha256 "/) { gsub(/"[a-f0-9]{64}"/, "\"" sha_linux_amd64 "\""); in_linux_intel=0 }
+            }
+            { print }
+          ' Formula/caddy-llm-proxy.rb > Formula/caddy-llm-proxy.rb.tmp
+          mv Formula/caddy-llm-proxy.rb.tmp Formula/caddy-llm-proxy.rb
 
           cat Formula/caddy-llm-proxy.rb
 
