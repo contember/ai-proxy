@@ -7,22 +7,22 @@ class CaddyLlmProxy < Formula
   on_macos do
     on_arm do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-darwin-arm64.tar.gz"
-      sha256 "ca4b749ec3d10b18373120c5f25282a37d11e2daa5a6d57d80b2fef0c48e80cf"
+      sha256 "b4d5fa95e6a987f221e3fa0a8f00ea3cd178a00aab613b8f2f9ec4bbf6e68192"
     end
     on_intel do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-darwin-amd64.tar.gz"
-      sha256 "3eb4b3108c321211f800509e3b1b000576e7f0e45e0bc7ba9c07ef2a3737883a"
+      sha256 "e3b66ef535b785b9310a3ea6af49ecf41fc4d9b968e8b75332af21da8a381e6e"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-linux-arm64.tar.gz"
-      sha256 "79553b39516c253277a9fece6515595d90f6f59d4f2b78e597faacb42f8e87bf"
+      sha256 "14f0ae6dc471a2eaadd3989f94c7328020c2d0d91851e120141cd9f47a78d56e"
     end
     on_intel do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-linux-amd64.tar.gz"
-      sha256 "6b7411039591004701a8a12bf32e9b064eb005d55320f209f729cbe9174cfd60"
+      sha256 "9c240b1f10d9e0153726a11dab4b44a3bfd979310021872c15d234d833b6f8e5"
     end
   end
 
