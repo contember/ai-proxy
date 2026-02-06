@@ -113,8 +113,11 @@ func DiscoverLocalProcesses() ([]LocalProcess, error) {
 	var err error
 
 	if runtime.GOOS == "darwin" {
-		// macOS: use lsof
+		// macOS: try lsof first, fallback to netstat
 		processes, err = discoverWithLsof()
+		if err != nil || len(processes) == 0 {
+			processes, err = discoverWithNetstat()
+		}
 	} else {
 		// Linux: try ss first, fallback to /proc
 		processes, err = tryWithSs()
@@ -219,7 +222,11 @@ func discoverWithLsof() ([]LocalProcess, error) {
 	cmd := exec.CommandContext(ctx, "lsof", "-iTCP", "-sTCP:LISTEN", "-n", "-P")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		// lsof may exit non-zero even with valid output (e.g., permission warnings
+		// when running as root via launchd). Parse output if we got any.
+		if len(output) == 0 {
+			return nil, err
+		}
 	}
 
 	var processes []LocalProcess
@@ -288,6 +295,91 @@ func discoverWithLsof() ([]LocalProcess, error) {
 	return processes, nil
 }
 
+// discoverWithNetstat is a fallback for macOS when lsof fails (e.g., in launchd services).
+// Uses netstat -anv which reads from kernel network tables and includes PID info.
+func discoverWithNetstat() ([]LocalProcess, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "netstat", "-anv", "-p", "tcp")
+	output, err := cmd.Output()
+	if err != nil {
+		if len(output) == 0 {
+			return nil, err
+		}
+	}
+
+	var processes []LocalProcess
+	seenPorts := make(map[int]bool)
+	lines := strings.Split(string(output), "\n")
+
+	// netstat -anv output format:
+	// tcp4   0   0  *.5173   *.*   LISTEN   ...   node:5588   ...
+	// Fields vary but we look for LISTEN state and command:PID at the end
+
+	for _, line := range lines {
+		if !strings.Contains(line, "LISTEN") {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) < 9 {
+			continue
+		}
+
+		// Local address is typically parts[3], format: *.port or addr.port
+		localAddr := parts[3]
+
+		// Extract port (last component after the last dot)
+		lastDot := strings.LastIndex(localAddr, ".")
+		if lastDot < 0 {
+			continue
+		}
+		port, err := strconv.Atoi(localAddr[lastDot+1:])
+		if err != nil || port < 1024 || seenPorts[port] {
+			continue
+		}
+		seenPorts[port] = true
+
+		// Extract bind address
+		bindAddr := localAddr[:lastDot]
+		if bindAddr == "*" {
+			bindAddr = "0.0.0.0"
+		}
+
+		// Find command:PID field (format: "node:5588" or "bun:5773")
+		var command string
+		var pid int
+		for _, field := range parts[8:] {
+			if idx := strings.LastIndex(field, ":"); idx > 0 {
+				name := field[:idx]
+				if p, err := strconv.Atoi(field[idx+1:]); err == nil && p > 0 {
+					command = name
+					pid = p
+					break
+				}
+			}
+		}
+		if pid == 0 {
+			continue
+		}
+
+		args := cleanArgs(getProcessArgsMac(pid))
+		workdir := getProcessWorkdirMac(pid)
+
+		processes = append(processes, LocalProcess{
+			Port:     port,
+			PID:      pid,
+			BindAddr: bindAddr,
+			Command:  command,
+			Args:     args,
+			Workdir:  workdir,
+		})
+	}
+
+	return processes, nil
+}
+
 // getProcessArgsMac gets process arguments on macOS using ps
 func getProcessArgsMac(pid int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
@@ -308,7 +400,7 @@ func getProcessWorkdirMac(pid int) string {
 
 	cmd := exec.CommandContext(ctx, "lsof", "-p", strconv.Itoa(pid), "-Fn", "-d", "cwd")
 	output, err := cmd.Output()
-	if err != nil {
+	if err != nil && len(output) == 0 {
 		return ""
 	}
 
