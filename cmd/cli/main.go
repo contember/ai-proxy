@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 )
 
 const usage = `Caddy LLM Proxy - AI-powered local development proxy
@@ -17,6 +18,7 @@ Commands:
   stop        Stop the proxy
   restart     Restart the proxy
   trust       Trust the HTTPS certificate
+  logs        Tail the proxy log file
 
 All other commands (run, version, etc.) are passed through to Caddy.
 `
@@ -116,6 +118,23 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("done")
+
+	case "logs":
+		logFile := getLogFile()
+		if _, err := os.Stat(logFile); os.IsNotExist(err) {
+			printError("No log file found. Start the proxy first to generate logs.")
+			os.Exit(1)
+		}
+		fmt.Printf("Tailing %s (Ctrl+C to stop)\n\n", logFile)
+		cmd := exec.Command("tail", "-f", logFile)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			// tail -f is normally interrupted by Ctrl+C, which is expected
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 130 {
+				os.Exit(0)
+			}
+		}
 
 	default:
 		// Delegate everything else to the caddy binary
