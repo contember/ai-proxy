@@ -1,3 +1,3 @@
-module github.com/contember/ai-proxy/cmd/cli
+module github.com/contember/tudy/cmd/cli
 
 go 1.22

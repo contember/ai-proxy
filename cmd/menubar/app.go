@@ -46,7 +46,7 @@ func NewApp(config *Config) *App {
 func (a *App) onReady() {
 	// Set initial icon (template for macOS dark/light mode support)
 	systray.SetTemplateIcon(iconStopped, iconStopped)
-	systray.SetTooltip("Caddy LLM Proxy")
+	systray.SetTooltip("Tudy")
 
 	// Create menu items
 	a.mStatus = systray.AddMenuItem("Status: Checking...", "Current proxy status")
@@ -326,7 +326,7 @@ func (a *App) promptFirstRunAPIKey() {
 	// Small delay so the menu bar icon appears first
 	time.Sleep(500 * time.Millisecond)
 
-	confirmed, _ := showConfirmDialog("Welcome to Caddy LLM Proxy",
+	confirmed, _ := showConfirmDialog("Welcome to Tudy",
 		"No API key is configured yet. Would you like to set your OpenRouter API key now?")
 	if confirmed {
 		a.handleConfigureKey()

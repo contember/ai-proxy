@@ -1,4 +1,4 @@
-module github.com/contember/ai-proxy/cmd/menubar
+module github.com/contember/tudy/cmd/menubar
 
 go 1.24.0
 

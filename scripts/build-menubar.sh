@@ -1,15 +1,15 @@
 #!/bin/bash
 set -e
 
-# Build script for the Caddy LLM Proxy menu bar app
+# Build script for the Tudy menu bar app
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_ROOT/build"
-APP_NAME="Caddy LLM Proxy"
+APP_NAME="Tudy"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
-echo "Building Caddy LLM Proxy menu bar app..."
+echo "Building Tudy menu bar app..."
 
 # Clean previous build
 rm -rf "$APP_BUNDLE"

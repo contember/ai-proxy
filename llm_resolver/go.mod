@@ -1,4 +1,4 @@
-module github.com/contember/ai-proxy/llm_resolver
+module github.com/contember/tudy/llm_resolver
 
 go 1.24.0
 

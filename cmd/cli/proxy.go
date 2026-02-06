@@ -18,7 +18,7 @@ const (
 	adminAPI = "http://localhost:2019"
 
 	// Homebrew service name
-	brewServiceName = "caddy-llm-proxy"
+	brewServiceName = "tudy"
 )
 
 // ProxyStatus represents the current state of the proxy
@@ -68,9 +68,9 @@ func isAdminAPIResponding() bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// isProcessRunning checks if caddy-llm-proxy process is running
+// isProcessRunning checks if tudy process is running
 func isProcessRunning() bool {
-	cmd := exec.Command("pgrep", "-f", "caddy-llm-proxy")
+	cmd := exec.Command("pgrep", "-f", "tudy")
 	err := cmd.Run()
 	return err == nil
 }
@@ -151,7 +151,7 @@ func startDirect(config *Config) error {
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, "Library", "Logs")
 	os.MkdirAll(logDir, 0755)
-	logFile := filepath.Join(logDir, "caddy-llm-proxy.log")
+	logFile := filepath.Join(logDir, "tudy.log")
 
 	shellCmd := fmt.Sprintf(
 		"set -a; source '%s'; '%s' run --config '%s' >> '%s' 2>&1 &",
@@ -220,11 +220,11 @@ func stopViaBrewOrKill() error {
 	}
 
 	if isProcessRunning() {
-		exec.Command("pkill", "-f", "caddy-llm-proxy").Run()
+		exec.Command("pkill", "-f", "tudy").Run()
 		time.Sleep(500 * time.Millisecond)
 
 		if isProcessRunning() {
-			script := `do shell script "pkill -f caddy-llm-proxy; exit 0" with administrator privileges`
+			script := `do shell script "pkill -f tudy; exit 0" with administrator privileges`
 			exec.Command("osascript", "-e", script).Run()
 		}
 	}
@@ -293,9 +293,9 @@ func escapeAppleScript(s string) string {
 func getLogFile() string {
 	home, _ := os.UserHomeDir()
 	locations := []string{
-		filepath.Join(home, "Library", "Logs", "Homebrew", "caddy-llm-proxy.log"),
-		filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log"),
-		"/var/log/caddy-llm-proxy.log",
+		filepath.Join(home, "Library", "Logs", "Homebrew", "tudy.log"),
+		filepath.Join(home, "Library", "Logs", "tudy.log"),
+		"/var/log/tudy.log",
 	}
 	for _, loc := range locations {
 		if _, err := os.Stat(loc); err == nil {
@@ -303,7 +303,7 @@ func getLogFile() string {
 		}
 	}
 	// Default fallback (file may not exist yet)
-	return filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+	return filepath.Join(home, "Library", "Logs", "tudy.log")
 }
 
 // copyFile copies a file from src to dst

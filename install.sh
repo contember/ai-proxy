@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-REPO="contember/ai-proxy"
+REPO="contember/tudy"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-CONFIG_DIR="${CONFIG_DIR:-/usr/local/etc/caddy-llm-proxy}"
-DATA_DIR="${DATA_DIR:-/var/lib/caddy-llm-proxy}"
+CONFIG_DIR="${CONFIG_DIR:-/usr/local/etc/tudy}"
+DATA_DIR="${DATA_DIR:-/var/lib/tudy}"
 
 # Detect OS and architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -31,7 +31,7 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-echo "Installing caddy-llm-proxy v${VERSION} for ${OS}/${ARCH}..."
+echo "Installing tudy v${VERSION} for ${OS}/${ARCH}..."
 
 # Download and extract
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/v${VERSION}/caddy-${OS}-${ARCH}.tar.gz"
@@ -49,8 +49,8 @@ if [ ! -w "$INSTALL_DIR" ]; then
 fi
 
 $SUDO mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
-$SUDO mv "$TMP_DIR/caddy" "$INSTALL_DIR/caddy-llm-proxy"
-$SUDO chmod +x "$INSTALL_DIR/caddy-llm-proxy"
+$SUDO mv "$TMP_DIR/caddy" "$INSTALL_DIR/tudy"
+$SUDO chmod +x "$INSTALL_DIR/tudy"
 
 # Install Caddyfile if not exists
 if [ ! -f "$CONFIG_DIR/Caddyfile" ] && [ -f "$TMP_DIR/Caddyfile" ]; then
@@ -69,16 +69,16 @@ fi
 
 # macOS: remove quarantine and sign
 if [ "$OS" = "darwin" ]; then
-  xattr -d com.apple.quarantine "$INSTALL_DIR/caddy-llm-proxy" 2>/dev/null || true
-  codesign --force --deep --sign - "$INSTALL_DIR/caddy-llm-proxy" 2>/dev/null || true
+  xattr -d com.apple.quarantine "$INSTALL_DIR/tudy" 2>/dev/null || true
+  codesign --force --deep --sign - "$INSTALL_DIR/tudy" 2>/dev/null || true
 fi
 
 cat << EOF
 
-Installed to $INSTALL_DIR/caddy-llm-proxy
+Installed to $INSTALL_DIR/tudy
 Config: $CONFIG_DIR/Caddyfile
 
 Add your API key and start:
   echo 'LLM_API_KEY=sk-your-key' >> $CONFIG_DIR/env
-  sudo bash -c 'set -a; source $CONFIG_DIR/env; caddy-llm-proxy run --config $CONFIG_DIR/Caddyfile'
+  sudo bash -c 'set -a; source $CONFIG_DIR/env; tudy run --config $CONFIG_DIR/Caddyfile'
 EOF

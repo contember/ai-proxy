@@ -1,10 +1,10 @@
-# Caddy LLM Proxy
+# Tudy
 
 This is a Go project - a Caddy plugin for LLM-based dynamic routing.
 
 ## Development
 
-- Use `xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver` to build
+- Use `xcaddy build --with github.com/contember/tudy/llm_resolver=./llm_resolver` to build
 - Use `xcaddy run --config Caddyfile` to run with hot reload
 - Use `go test ./...` to run tests
 - Use `go mod tidy` to update dependencies (run in llm_resolver/ directory)
@@ -13,7 +13,7 @@ This is a Go project - a Caddy plugin for LLM-based dynamic routing.
 
 ```bash
 # Build Docker image
-docker build -t llm-proxy .
+docker build -t tudy .
 
 # Or use docker compose
 docker compose up -d
@@ -36,7 +36,7 @@ llm_resolver/                    # Caddy module (Go package)
     ├── docker.go                # Docker container discovery
     └── processes.go             # Local process discovery
 
-cmd/cli/                         # CLI binary (caddy-llm-proxy command)
+cmd/cli/                         # CLI binary (tudy command)
 ├── main.go                      # Entry point, subcommand dispatch
 ├── config.go                    # Configuration handling
 ├── proxy.go                     # Proxy status/start/stop/restart

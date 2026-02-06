@@ -6,10 +6,10 @@ import (
 	"os/exec"
 )
 
-const usage = `Caddy LLM Proxy - AI-powered local development proxy
+const usage = `Tudy - AI-powered local development proxy
 
 Usage:
-  caddy-llm-proxy <command> [args...]
+  tudy <command> [args...]
 
 Commands:
   setup       Interactive first-time setup (API key, certificate, start)
@@ -40,7 +40,7 @@ func main() {
 		config, err := LoadConfig()
 		if err != nil {
 			printError(fmt.Sprintf("Failed to load configuration: %v", err))
-			printError("Make sure caddy-llm-proxy is installed via Homebrew.")
+			printError("Make sure tudy is installed via Homebrew.")
 			os.Exit(1)
 		}
 		os.Exit(runSetup(config))

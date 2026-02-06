@@ -1,4 +1,4 @@
-# Caddy LLM Proxy
+# Tudy
 
 A local development proxy that uses AI to automatically route `*.localhost` domains to your running services. No config files, no port numbers to remember -- just visit `myapp.localhost` and the proxy figures out the rest.
 
@@ -24,9 +24,9 @@ Supports any OpenAI-compatible API (OpenRouter, Ollama, LM Studio, vLLM, etc.).
 ### macOS (Homebrew)
 
 ```bash
-brew tap contember/ai-proxy https://github.com/contember/ai-proxy
-brew install caddy-llm-proxy
-caddy-llm-proxy setup
+brew tap contember/tudy https://github.com/contember/tudy
+brew install tudy
+tudy setup
 ```
 
 The `setup` command walks you through configuring your API key, trusting the HTTPS certificate, and starting the proxy.
@@ -54,7 +54,7 @@ curl -k https://myapp.localhost
 <summary>Install script (macOS/Linux)</summary>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/contember/ai-proxy/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/contember/tudy/main/install.sh | bash
 ```
 
 Handles macOS Gatekeeper automatically.
@@ -76,7 +76,7 @@ sudo LLM_API_KEY=your-key ./caddy run --config Caddyfile
 
 ```bash
 go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
+xcaddy build --with github.com/contember/tudy/llm_resolver=./llm_resolver
 LLM_API_KEY=your-key ./caddy run --config Caddyfile
 ```
 </details>
@@ -151,29 +151,29 @@ curl -X DELETE https://any.localhost/_api/mappings/myapp.localhost
 
 ## CLI
 
-The `caddy-llm-proxy` command handles proxy management and delegates all other commands to the underlying Caddy binary.
+The `tudy` command handles proxy management and delegates all other commands to the underlying Caddy binary.
 
 ```
-caddy-llm-proxy setup       # Interactive first-time setup
-caddy-llm-proxy status      # Show proxy status
-caddy-llm-proxy start       # Start the proxy
-caddy-llm-proxy stop        # Stop the proxy
-caddy-llm-proxy restart     # Restart the proxy
-caddy-llm-proxy trust       # Trust the HTTPS certificate
+tudy setup       # Interactive first-time setup
+tudy status      # Show proxy status
+tudy start       # Start the proxy
+tudy stop        # Stop the proxy
+tudy restart     # Restart the proxy
+tudy trust       # Trust the HTTPS certificate
 ```
 
 All other commands (`run`, `version`, `list-modules`, etc.) are passed through to Caddy:
 
 ```bash
-caddy-llm-proxy version     # Shows Caddy version
-caddy-llm-proxy run         # Runs Caddy in foreground (env file sourced automatically)
+tudy version     # Shows Caddy version
+tudy run         # Runs Caddy in foreground (env file sourced automatically)
 ```
 
 ## macOS Menu Bar App
 
 On macOS, a menu bar app is installed alongside the proxy. It shows proxy status, lets you start/stop the service, configure your API key, and trust the certificate from the menu bar.
 
-The app is installed at `$(brew --prefix)/opt/caddy-llm-proxy/Caddy LLM Proxy.app`. Add it to System Settings > General > Login Items to start automatically.
+The app is installed at `$(brew --prefix)/opt/tudy/Tudy.app`. Add it to System Settings > General > Login Items to start automatically.
 
 ## Configuration
 
@@ -188,7 +188,7 @@ The app is installed at `$(brew --prefix)/opt/caddy-llm-proxy/Caddy LLM Proxy.ap
 
 ### Config Files
 
-Homebrew installations store config in `$(brew --prefix)/etc/caddy-llm-proxy/`:
+Homebrew installations store config in `$(brew --prefix)/etc/tudy/`:
 
 | File | Purpose |
 |---|---|
@@ -211,15 +211,15 @@ llm_resolver {
 
 ```bash
 # Via brew services (recommended)
-sudo brew services start caddy-llm-proxy
-sudo brew services stop caddy-llm-proxy
+sudo brew services start tudy
+sudo brew services stop tudy
 
 # Or via the CLI
-caddy-llm-proxy start
-caddy-llm-proxy stop
+tudy start
+tudy stop
 ```
 
-Logs: `~/Library/Logs/Homebrew/caddy-llm-proxy.log` (macOS)
+Logs: `~/Library/Logs/Homebrew/tudy.log` (macOS)
 
 ## How It Works
 
@@ -240,10 +240,10 @@ Logs: `~/Library/Logs/Homebrew/caddy-llm-proxy.log` (macOS)
 xcaddy run --config Caddyfile
 
 # Build the Caddy binary with the plugin
-xcaddy build --with github.com/contember/ai-proxy/llm_resolver=./llm_resolver
+xcaddy build --with github.com/contember/tudy/llm_resolver=./llm_resolver
 
 # Build the CLI
-cd cmd/cli && go build -o caddy-llm-proxy .
+cd cmd/cli && go build -o tudy .
 
 # Build the menubar app (macOS only)
 cd cmd/menubar && go build -o menubar .
@@ -252,7 +252,7 @@ cd cmd/menubar && go build -o menubar .
 go test ./...
 
 # Build Docker image
-docker build -t llm-proxy .
+docker build -t tudy .
 ```
 
 ### Project Structure
@@ -266,7 +266,7 @@ llm_resolver/            # Caddy module (Go package)
   discovery/             # Service discovery
     docker.go            # Docker container discovery
     processes.go         # Local process discovery
-cmd/cli/                 # CLI binary (caddy-llm-proxy command)
+cmd/cli/                 # CLI binary (tudy command)
 cmd/menubar/             # macOS menu bar app
 Formula/                 # Homebrew formula
 ```

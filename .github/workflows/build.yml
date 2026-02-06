@@ -46,7 +46,7 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           xcaddy build \
-            --with github.com/contember/ai-proxy/llm_resolver=${{ github.workspace }}/llm_resolver \
+            --with github.com/contember/tudy/llm_resolver=${{ github.workspace }}/llm_resolver \
             --output caddy
 
       - name: Build CLI
@@ -99,7 +99,7 @@ jobs:
         with:
           context: .
           push: false
-          tags: llm-proxy:latest
+          tags: tudy:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -158,16 +158,16 @@ jobs:
               if (in_linux_intel && /sha256 "/) { gsub(/"[a-f0-9]{64}"/, "\"" sha_linux_amd64 "\""); in_linux_intel=0 }
             }
             { print }
-          ' Formula/caddy-llm-proxy.rb > Formula/caddy-llm-proxy.rb.tmp
-          mv Formula/caddy-llm-proxy.rb.tmp Formula/caddy-llm-proxy.rb
+          ' Formula/tudy.rb > Formula/tudy.rb.tmp
+          mv Formula/tudy.rb.tmp Formula/tudy.rb
 
-          cat Formula/caddy-llm-proxy.rb
+          cat Formula/tudy.rb
 
       - name: Commit formula update
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/caddy-llm-proxy.rb
+          git add Formula/tudy.rb
           git commit -m "chore: update homebrew formula for ${GITHUB_REF#refs/tags/}"
           git push origin HEAD:main
 

@@ -20,13 +20,13 @@ type Config struct {
 
 // Possible installation paths (Homebrew ARM, Homebrew Intel, manual)
 var configPaths = []string{
-	"/opt/homebrew/etc/caddy-llm-proxy",
-	"/usr/local/etc/caddy-llm-proxy",
+	"/opt/homebrew/etc/tudy",
+	"/usr/local/etc/tudy",
 }
 
 var binaryPaths = []string{
-	"/opt/homebrew/bin/caddy-llm-proxy-bin",
-	"/usr/local/bin/caddy-llm-proxy-bin",
+	"/opt/homebrew/bin/tudy-bin",
+	"/usr/local/bin/tudy-bin",
 }
 
 // LoadConfig detects the installation and loads configuration
@@ -47,7 +47,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if config.ConfigDir == "" {
-		return nil, fmt.Errorf("caddy-llm-proxy config not found in %v", configPaths)
+		return nil, fmt.Errorf("tudy config not found in %v", configPaths)
 	}
 
 	// Find binary
@@ -59,7 +59,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if config.BinaryPath == "" {
-		return nil, fmt.Errorf("caddy-llm-proxy-bin binary not found in %v", binaryPaths)
+		return nil, fmt.Errorf("tudy-bin binary not found in %v", binaryPaths)
 	}
 
 	// Load default URL from env if present

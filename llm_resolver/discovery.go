@@ -1,7 +1,7 @@
 package llm_resolver
 
 import (
-	"github.com/contember/ai-proxy/llm_resolver/discovery"
+	"github.com/contember/tudy/llm_resolver/discovery"
 )
 
 // Re-export types from discovery package

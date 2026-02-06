@@ -9,13 +9,13 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.contember.caddy-llm-proxy</string>
+    <string>com.contember.tudy</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Caddy LLM Proxy</string>
+    <string>Tudy</string>
     <key>CFBundleDisplayName</key>
-    <string>Caddy LLM Proxy</string>
+    <string>Tudy</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

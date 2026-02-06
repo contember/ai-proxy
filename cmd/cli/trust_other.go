@@ -15,7 +15,7 @@ func TrustCertificate(config *Config) error {
 
 	certPaths := []string{
 		filepath.Join(home, ".local", "share", "caddy", "pki", "authorities", "local", "root.crt"),
-		"/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
+		"/var/lib/tudy/pki/authorities/local/root.crt",
 	}
 
 	var certPath string

@@ -7,7 +7,7 @@ import (
 
 // runSetup runs the interactive setup flow
 func runSetup(config *Config) int {
-	printHeader("Caddy LLM Proxy Setup")
+	printHeader("Tudy Setup")
 
 	// Step 1: Configure API Key
 	printStep(1, 3, "Configure API Key")
@@ -42,7 +42,7 @@ func runSetup(config *Config) int {
 			printDim("  Starting proxy to generate certificate...")
 			if err := StartProxy(config); err != nil {
 				printWarning(fmt.Sprintf("Could not start proxy: %v", err))
-				printWarning("You can trust the certificate later with: caddy-llm-proxy trust")
+				printWarning("You can trust the certificate later with: tudy trust")
 			} else {
 				printDim("  Trusting certificate...")
 				if err := TrustCertificate(config); err != nil {

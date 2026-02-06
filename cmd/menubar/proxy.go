@@ -19,7 +19,7 @@ const (
 	adminAPI = "http://localhost:2019"
 
 	// Homebrew service name
-	brewServiceName = "caddy-llm-proxy"
+	brewServiceName = "tudy"
 )
 
 // getLogFile returns the current log file path, checking locations each time
@@ -29,12 +29,12 @@ func getLogFile() string {
 		home = os.Getenv("HOME")
 	}
 	// Check brew services log location first
-	brewLog := filepath.Join(home, "Library", "Logs", "Homebrew", "caddy-llm-proxy.log")
+	brewLog := filepath.Join(home, "Library", "Logs", "Homebrew", "tudy.log")
 	if _, err := os.Stat(brewLog); err == nil {
 		return brewLog
 	}
 	// Fall back to our custom location
-	return filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+	return filepath.Join(home, "Library", "Logs", "tudy.log")
 }
 
 // ErrManualTrustRequired is returned when the certificate was opened in Keychain Access
@@ -93,9 +93,9 @@ func isAdminAPIResponding() bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// isProcessRunning checks if caddy-llm-proxy process is running
+// isProcessRunning checks if tudy process is running
 func isProcessRunning() bool {
-	cmd := exec.Command("pgrep", "-f", "caddy-llm-proxy")
+	cmd := exec.Command("pgrep", "-f", "tudy")
 	err := cmd.Run()
 	return err == nil
 }
@@ -186,7 +186,7 @@ func startDirect(config *Config) error {
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, "Library", "Logs")
 	os.MkdirAll(logDir, 0755)
-	logFile := filepath.Join(logDir, "caddy-llm-proxy.log")
+	logFile := filepath.Join(logDir, "tudy.log")
 
 	shellCmd := fmt.Sprintf(
 		"set -a; source '%s'; '%s' run --config '%s' >> '%s' 2>&1 &",
@@ -263,12 +263,12 @@ func stopViaBrewOrKill() error {
 	// Last resort: kill the process (may need sudo)
 	if isProcessRunning() {
 		// Try regular kill first
-		exec.Command("pkill", "-f", "caddy-llm-proxy").Run()
+		exec.Command("pkill", "-f", "tudy").Run()
 		time.Sleep(500 * time.Millisecond)
 
 		if isProcessRunning() {
 			// Need sudo
-			script := `do shell script "pkill -f caddy-llm-proxy; exit 0" with administrator privileges`
+			script := `do shell script "pkill -f tudy; exit 0" with administrator privileges`
 			exec.Command("osascript", "-e", script).Run()
 		}
 	}
@@ -346,9 +346,9 @@ func TrustCertificate(config *Config) error {
 	// Try multiple possible certificate locations
 	certPaths := []string{
 		filepath.Join(home, "Library", "Application Support", "Caddy", "pki", "authorities", "local", "root.crt"),
-		"/opt/homebrew/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
-		"/usr/local/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
-		"/var/lib/caddy-llm-proxy/pki/authorities/local/root.crt",
+		"/opt/homebrew/var/lib/tudy/pki/authorities/local/root.crt",
+		"/usr/local/var/lib/tudy/pki/authorities/local/root.crt",
+		"/var/lib/tudy/pki/authorities/local/root.crt",
 	}
 
 	loginKeychain := filepath.Join(home, "Library", "Keychains", "login.keychain-db")

@@ -69,9 +69,9 @@ func delegateToCaddy(config *Config, args []string) error {
 		// Determine var dir based on config dir location
 		var varDir string
 		if strings.HasPrefix(config.ConfigDir, "/opt/homebrew") {
-			varDir = "/opt/homebrew/var/lib/caddy-llm-proxy"
+			varDir = "/opt/homebrew/var/lib/tudy"
 		} else if strings.HasPrefix(config.ConfigDir, "/usr/local") {
-			varDir = "/usr/local/var/lib/caddy-llm-proxy"
+			varDir = "/usr/local/var/lib/tudy"
 		}
 		if varDir != "" {
 			os.Setenv("CADDY_DATA_DIR", varDir)

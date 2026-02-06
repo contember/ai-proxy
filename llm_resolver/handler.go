@@ -311,7 +311,7 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LLM Proxy</title>
+    <title>Tudy</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
@@ -707,7 +707,7 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 <div class="layout">
     <div class="header">
         <div class="header-left">
-            <div class="wordmark">llm-proxy <span>//</span> dashboard</div>
+            <div class="wordmark">tudy <span>//</span> dashboard</div>
             <div class="status-dot" title="Running"></div>
         </div>
         <div class="header-actions">
