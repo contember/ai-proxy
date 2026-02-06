@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"errors"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -297,7 +298,12 @@ func (a *App) handleOpenDefaultURL() {
 
 // handleViewLogs opens the log file in Console.app
 func (a *App) handleViewLogs() {
-	exec.Command("open", "-a", "Console", LogFile).Start()
+	logFile := getLogFile()
+	if _, err := os.Stat(logFile); os.IsNotExist(err) {
+		showAlert("No Logs", "Log file not found. Start the proxy first to generate logs.", true)
+		return
+	}
+	exec.Command("open", "-a", "Console", logFile).Start()
 }
 
 // handleTrustCert installs Caddy's root certificate to the system trust store

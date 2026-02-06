@@ -22,21 +22,19 @@ const (
 	brewServiceName = "caddy-llm-proxy"
 )
 
-// LogFile is where proxy logs are written (when using brew services)
-var LogFile string
-
-func init() {
+// getLogFile returns the current log file path, checking locations each time
+func getLogFile() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = os.Getenv("HOME")
 	}
-	// Brew services log location
-	LogFile = filepath.Join(home, "Library", "Logs", "Homebrew", "caddy-llm-proxy.log")
-
-	// Fall back to our custom location if brew logs don't exist
-	if _, err := os.Stat(LogFile); os.IsNotExist(err) {
-		LogFile = filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+	// Check brew services log location first
+	brewLog := filepath.Join(home, "Library", "Logs", "Homebrew", "caddy-llm-proxy.log")
+	if _, err := os.Stat(brewLog); err == nil {
+		return brewLog
 	}
+	// Fall back to our custom location
+	return filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
 }
 
 // ErrManualTrustRequired is returned when the certificate was opened in Keychain Access
@@ -186,7 +184,9 @@ func waitForStart() error {
 // startDirect starts the proxy directly (fallback if brew not available)
 func startDirect(config *Config) error {
 	home, _ := os.UserHomeDir()
-	logFile := filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+	logDir := filepath.Join(home, "Library", "Logs")
+	os.MkdirAll(logDir, 0755)
+	logFile := filepath.Join(logDir, "caddy-llm-proxy.log")
 
 	shellCmd := fmt.Sprintf(
 		"set -a; source '%s'; '%s' run --config '%s' >> '%s' 2>&1 &",

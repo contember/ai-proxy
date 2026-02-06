@@ -146,16 +146,8 @@ func printStatus(config *Config) {
 	}
 
 	// Show log file location
-	home, _ := os.UserHomeDir()
-	logLocations := []string{
-		home + "/Library/Logs/Homebrew/caddy-llm-proxy.log",
-		home + "/Library/Logs/caddy-llm-proxy.log",
-		"/var/log/caddy-llm-proxy.log",
-	}
-	for _, loc := range logLocations {
-		if _, err := os.Stat(loc); err == nil {
-			fmt.Printf("  Logs:      %s\n", loc)
-			break
-		}
+	logFile := getLogFile()
+	if _, err := os.Stat(logFile); err == nil {
+		fmt.Printf("  Logs:      %s\n", logFile)
 	}
 }

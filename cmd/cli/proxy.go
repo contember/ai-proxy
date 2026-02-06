@@ -149,7 +149,9 @@ func waitForStart() error {
 // startDirect starts the proxy directly (fallback if brew not available)
 func startDirect(config *Config) error {
 	home, _ := os.UserHomeDir()
-	logFile := filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
+	logDir := filepath.Join(home, "Library", "Logs")
+	os.MkdirAll(logDir, 0755)
+	logFile := filepath.Join(logDir, "caddy-llm-proxy.log")
 
 	shellCmd := fmt.Sprintf(
 		"set -a; source '%s'; '%s' run --config '%s' >> '%s' 2>&1 &",
@@ -285,6 +287,23 @@ func escapeAppleScript(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "\"", "\\\"")
 	return s
+}
+
+// getLogFile returns the current log file path, checking locations each time
+func getLogFile() string {
+	home, _ := os.UserHomeDir()
+	locations := []string{
+		filepath.Join(home, "Library", "Logs", "Homebrew", "caddy-llm-proxy.log"),
+		filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log"),
+		"/var/log/caddy-llm-proxy.log",
+	}
+	for _, loc := range locations {
+		if _, err := os.Stat(loc); err == nil {
+			return loc
+		}
+	}
+	// Default fallback (file may not exist yet)
+	return filepath.Join(home, "Library", "Logs", "caddy-llm-proxy.log")
 }
 
 // copyFile copies a file from src to dst
