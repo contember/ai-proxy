@@ -1,13 +1,13 @@
 class CaddyLlmProxy < Formula
   desc "Caddy with LLM-based dynamic routing plugin"
   homepage "https://github.com/contember/ai-proxy"
-  version "0.3.1"
+  version "0.3.2"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-darwin-arm64.tar.gz"
-      sha256 "1bf7247e9a46dc6d8e8fccb6e52ad2fb3846f452f1c8b5b704db193fae1fd6e0"
+      sha256 "34318e3962f87ef52ab23449b0cd250193ffd71257d1f3adb955fe88922bc59d"
     end
     on_intel do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-darwin-amd64.tar.gz"
@@ -18,7 +18,7 @@ class CaddyLlmProxy < Formula
   on_linux do
     on_arm do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-linux-arm64.tar.gz"
-      sha256 "1a3a1a61dc7da386f5a16f25ce53dcf6cabfb93cd901f0056b08afb4fecd6460"
+      sha256 "abd62c5b4b9b3cd55b84f1729d56af4f5ef4ebdb1a5275781b42209aadaca9a7"
     end
     on_intel do
       url "https://github.com/contember/ai-proxy/releases/download/v#{version}/caddy-linux-amd64.tar.gz"
