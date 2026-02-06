@@ -273,6 +273,34 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 	mappings := m.cache.GetAll()
 	logEntries := m.logBuffer.Entries()
 
+	// Build available targets for inline editing dropdown
+	var availableTargets []map[string]interface{}
+	for _, proc := range processes {
+		label := proc.Command
+		if proc.Workdir != "" {
+			label = proc.Workdir
+		}
+		availableTargets = append(availableTargets, map[string]interface{}{
+			"type":   "process",
+			"target": proc.Workdir,
+			"port":   proc.Port,
+			"label":  fmt.Sprintf(":%d  %s", proc.Port, label),
+		})
+	}
+	for _, container := range containers {
+		port := 0
+		if len(container.Ports) > 0 {
+			port = container.Ports[0]
+		}
+		availableTargets = append(availableTargets, map[string]interface{}{
+			"type":   "docker",
+			"target": container.Name,
+			"port":   port,
+			"label":  fmt.Sprintf("%s (%s)", container.Name, container.Image),
+		})
+	}
+	availableTargetsJSON, _ := json.Marshal(availableTargets)
+
 	mappingCount := len(mappings)
 	processCount := len(processes)
 	containerCount := len(containers)
@@ -630,6 +658,25 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
         }
         .btn-del svg { width: 13px; height: 13px; }
 
+        .cell-editable { cursor: pointer; position: relative; }
+        .cell-editable:hover { background: rgba(212, 168, 67, 0.06); }
+        .cell-editable input, .cell-editable select {
+            font-family: var(--mono);
+            font-size: 12px;
+            background: var(--surface-raised);
+            border: 1px solid var(--accent-dim);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 4px 8px;
+            outline: none;
+        }
+        .cell-editable input { width: 80px; }
+        .cell-editable select { width: 100%; min-width: 200px; }
+        .cell-editable input:focus, .cell-editable select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(212, 168, 67, 0.15);
+        }
+
         .empty {
             padding: 36px 20px;
             text-align: center;
@@ -724,14 +771,14 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 				tagClass = "tag-docker"
 			}
 			html += fmt.Sprintf(`
-                <tr>
+                <tr data-hostname="%s" data-type="%s" data-target="%s" data-port="%d">
                     <td class="cell-hostname"><a href="https://%s" target="_blank">%s</a></td>
                     <td><span class="tag %s">%s</span></td>
-                    <td class="cell-mono">%s</td>
-                    <td class="cell-dim">%d</td>
+                    <td class="cell-mono cell-editable" onclick="editTarget(this)">%s</td>
+                    <td class="cell-dim cell-editable" onclick="editPort(this)">%d</td>
                     <td class="cell-reason" title="%s">%s</td>
                     <td><button class="btn-del" onclick="deleteMapping('%s')" title="Remove"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button></td>
-                </tr>`, hostname, hostname, tagClass, mapping.Type, mapping.Target, mapping.Port, mapping.LLMReason, mapping.LLMReason, hostname)
+                </tr>`, hostname, mapping.Type, mapping.Target, mapping.Port, hostname, hostname, tagClass, mapping.Type, mapping.Target, mapping.Port, mapping.LLMReason, mapping.LLMReason, hostname)
 		}
 
 		html += `
@@ -884,6 +931,107 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 </div>
 
 <script>
+    const availableTargets = ` + string(availableTargetsJSON) + `;
+
+    function editTarget(td) {
+        if (td.querySelector('select')) return;
+        const row = td.closest('tr');
+        const current = row.dataset.target;
+        const currentType = row.dataset.type;
+        const originalText = td.textContent;
+
+        const select = document.createElement('select');
+
+        const currentOpt = document.createElement('option');
+        currentOpt.value = '';
+        currentOpt.textContent = current;
+        currentOpt.selected = true;
+        select.appendChild(currentOpt);
+
+        const procs = availableTargets.filter(t => t.type === 'process');
+        if (procs.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = 'Processes';
+            procs.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = JSON.stringify(t);
+                opt.textContent = t.label;
+                group.appendChild(opt);
+            });
+            select.appendChild(group);
+        }
+
+        const dockers = availableTargets.filter(t => t.type === 'docker');
+        if (dockers.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = 'Containers';
+            dockers.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = JSON.stringify(t);
+                opt.textContent = t.label;
+                group.appendChild(opt);
+            });
+            select.appendChild(group);
+        }
+
+        td.textContent = '';
+        td.appendChild(select);
+        select.focus();
+
+        const cancel = () => { td.textContent = originalText; };
+        select.onchange = () => {
+            if (select.value) saveMapping(row, JSON.parse(select.value));
+            else cancel();
+        };
+        select.onkeydown = (e) => { if (e.key === 'Escape') cancel(); };
+        select.onblur = () => setTimeout(() => { if (td.contains(select)) cancel(); }, 150);
+    }
+
+    function editPort(td) {
+        if (td.querySelector('input')) return;
+        const row = td.closest('tr');
+        const current = parseInt(row.dataset.port);
+        const originalText = td.textContent;
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = current;
+        input.min = 1;
+        input.max = 65535;
+
+        td.textContent = '';
+        td.appendChild(input);
+        input.focus();
+        input.select();
+
+        const save = () => {
+            const newPort = parseInt(input.value);
+            if (newPort && newPort !== current) {
+                saveMapping(row, {type: row.dataset.type, target: row.dataset.target, port: newPort});
+            } else {
+                td.textContent = originalText;
+            }
+        };
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); save(); }
+            if (e.key === 'Escape') td.textContent = originalText;
+        };
+        input.onblur = save;
+    }
+
+    async function saveMapping(row, data) {
+        const hostname = row.dataset.hostname;
+        row.style.opacity = '0.5';
+        row.style.transition = 'opacity 0.2s';
+        const resp = await fetch('/_api/mappings/' + encodeURIComponent(hostname), {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: data.type, target: data.target, port: data.port}),
+        });
+        if (resp.ok) location.reload();
+        else { row.style.opacity = '1'; alert('Failed to update mapping'); }
+    }
+
     async function deleteMapping(hostname) {
         if (!confirm('Remove route mapping for ' + hostname + '?')) return;
         const row = event.target.closest('tr');
