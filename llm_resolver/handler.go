@@ -271,10 +271,12 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 	processes, _ := DiscoverLocalProcesses()
 	containers, _ := DiscoverDockerContainers(m.ComposeProject)
 	mappings := m.cache.GetAll()
+	logEntries := m.logBuffer.Entries()
 
 	mappingCount := len(mappings)
 	processCount := len(processes)
 	containerCount := len(containers)
+	logCount := len(logEntries)
 
 	html := `<!DOCTYPE html>
 <html lang="en">
@@ -419,7 +421,7 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
         /* ---- Stats ---- */
         .stats {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 1px;
             background: var(--border-subtle);
             border: 1px solid var(--border);
@@ -593,6 +595,23 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
         .tag-process::before { background: var(--green); }
         .tag-docker { background: var(--blue-bg); color: var(--blue); }
         .tag-docker::before { background: var(--blue); }
+        .tag-info { background: var(--green-bg); color: var(--green); }
+        .tag-info::before { background: var(--green); }
+        .tag-warn { background: rgba(212, 168, 67, 0.1); color: var(--accent); }
+        .tag-warn::before { background: var(--accent); }
+        .tag-error { background: var(--red-bg); color: var(--red); }
+        .tag-error::before { background: var(--red); }
+        .tag-debug { background: rgba(90, 88, 80, 0.1); color: var(--text-muted); }
+        .tag-debug::before { background: var(--text-muted); }
+        .cell-details {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            max-width: 340px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
 
         .btn-del {
             display: inline-flex; align-items: center; justify-content: center;
@@ -676,6 +695,10 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
         <div class="stat">
             <div class="stat-num">` + fmt.Sprintf("%d", containerCount) + `</div>
             <div class="stat-label">Containers</div>
+        </div>
+        <div class="stat">
+            <div class="stat-num">` + fmt.Sprintf("%d", logCount) + `</div>
+            <div class="stat-label">Logs</div>
         </div>
     </div>
 
@@ -793,6 +816,61 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
                     <td class="cell-mono">%s</td>
                     <td class="cell-dir" title="%s">%s</td>
                 </tr>`, container.Name, container.Image, ports, container.IP, container.Workdir, container.Workdir)
+		}
+
+		html += `
+                </tbody>
+            </table>`
+	}
+
+	html += `
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-head">
+            <span class="section-title">Recent Logs</span>
+            <span class="section-count">` + fmt.Sprintf("%d", logCount) + `</span>
+            <div class="section-line"></div>
+        </div>
+        <div class="table-container">`
+
+	if logCount == 0 {
+		html += `<div class="empty">No log entries yet.</div>`
+	} else {
+		html += `
+            <table>
+                <thead><tr><th>Time</th><th>Level</th><th>Message</th><th>Details</th></tr></thead>
+                <tbody>`
+
+		// Display in reverse chronological order (newest first)
+		for i := len(logEntries) - 1; i >= 0; i-- {
+			entry := logEntries[i]
+			tagClass := "tag-info"
+			switch entry.Level {
+			case "warn":
+				tagClass = "tag-warn"
+			case "error":
+				tagClass = "tag-error"
+			case "debug":
+				tagClass = "tag-debug"
+			}
+
+			details := ""
+			for k, v := range entry.Fields {
+				if details != "" {
+					details += " "
+				}
+				details += fmt.Sprintf("%s=%v", k, v)
+			}
+
+			html += fmt.Sprintf(`
+                <tr>
+                    <td class="cell-dim">%s</td>
+                    <td><span class="tag %s">%s</span></td>
+                    <td class="cell-mono">%s</td>
+                    <td class="cell-details" title="%s">%s</td>
+                </tr>`, entry.Time.Format(time.RFC3339), tagClass, entry.Level, entry.Message, details, details)
 		}
 
 		html += `

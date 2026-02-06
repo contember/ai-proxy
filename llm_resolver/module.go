@@ -11,6 +11,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -55,6 +56,9 @@ type LLMResolver struct {
 
 	// networkTunnel manages WireGuard tunnel to Docker VM on macOS
 	networkTunnel *NetworkTunnel
+
+	// logBuffer captures recent log entries for the debug dashboard
+	logBuffer *LogBuffer
 }
 
 // CaddyModule returns the Caddy module information.
@@ -67,7 +71,10 @@ func (LLMResolver) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the module.
 func (m *LLMResolver) Provision(ctx caddy.Context) error {
-	m.logger = ctx.Logger()
+	m.logBuffer = NewLogBuffer(200)
+	m.logger = ctx.Logger().WithOptions(zap.WrapCore(func(c zapcore.Core) zapcore.Core {
+		return zapcore.NewTee(c, NewBufferCore(m.logBuffer))
+	}))
 
 	// Set defaults
 	if m.Model == "" {
