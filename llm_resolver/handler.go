@@ -770,12 +770,18 @@ func (m *LLMResolver) handleDebugHTML(w http.ResponseWriter, r *http.Request) er
 			if mapping.Type == "docker" {
 				tagClass = "tag-docker"
 			}
+			portEditableClass := ""
+			portOnClick := ""
+			if mapping.Type != "process" {
+				portEditableClass = " cell-editable"
+				portOnClick = `onclick="editPort(this)"`
+			}
 			html += fmt.Sprintf(`
                 <tr data-hostname="%s" data-type="%s" data-target="%s" data-port="%d">
                     <td class="cell-hostname"><a href="https://%s" target="_blank">%s</a></td>
                     <td><span class="tag %s">%s</span></td>
                     <td class="cell-mono cell-editable" onclick="editTarget(this)">%s</td>
-                    <td class="cell-dim cell-editable" onclick="editPort(this)">%d</td>
+                    <td class="cell-dim`+portEditableClass+`" `+portOnClick+`>%d</td>
                     <td class="cell-reason" title="%s">%s</td>
                     <td><button class="btn-del" onclick="deleteMapping('%s')" title="Remove"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button></td>
                 </tr>`, hostname, mapping.Type, mapping.Target, mapping.Port, hostname, hostname, tagClass, mapping.Type, mapping.Target, mapping.Port, mapping.LLMReason, mapping.LLMReason, hostname)
