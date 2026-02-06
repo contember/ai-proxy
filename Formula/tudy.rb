@@ -1,13 +1,13 @@
 class Tudy < Formula
   desc "AI-powered local development proxy"
   homepage "https://github.com/contember/tudy"
-  version "0.3.4"
+  version "0.4.0"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/contember/tudy/releases/download/v#{version}/caddy-darwin-arm64.tar.gz"
-      sha256 "1903a92b76a1bd46b8c2a636c49a5187b249d30180e8a1661ad42e134b8c7a4b"
+      sha256 "1c609013a70007df8d6dcea4eaa4d3ab8c4062bf65d0ccce418f1bd8da5a7f9b"
     end
     on_intel do
       url "https://github.com/contember/tudy/releases/download/v#{version}/caddy-darwin-amd64.tar.gz"
@@ -18,7 +18,7 @@ class Tudy < Formula
   on_linux do
     on_arm do
       url "https://github.com/contember/tudy/releases/download/v#{version}/caddy-linux-arm64.tar.gz"
-      sha256 "70eccc1a31865ae0d3681cebbc49fd5afb940b6b18ebb785ac3d85ff592ba6e9"
+      sha256 "8d4c3192e1ac0371229205960bd43266292d80a0275b68a92ec56b9a2dae3b8d"
     end
     on_intel do
       url "https://github.com/contember/tudy/releases/download/v#{version}/caddy-linux-amd64.tar.gz"
