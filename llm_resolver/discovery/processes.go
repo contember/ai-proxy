@@ -398,7 +398,7 @@ func getProcessWorkdirMac(pid int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "lsof", "-p", strconv.Itoa(pid), "-Fn", "-d", "cwd")
+	cmd := exec.CommandContext(ctx, "lsof", "-a", "-p", strconv.Itoa(pid), "-Fn", "-d", "cwd")
 	output, err := cmd.Output()
 	if err != nil && len(output) == 0 {
 		return ""

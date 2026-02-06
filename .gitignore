@@ -31,3 +31,4 @@ vendor/
 # Build artifacts
 /build/
 cmd/menubar/menubar
+cmd/cli/cli
